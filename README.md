@@ -37,7 +37,14 @@ Sony requires a specific 8-byte Account ID to register for Remote Play.
 2. Toggle on **Enable Remote Play**.
 3. Select **Link Device**. The screen will display an 8-digit PIN.
 
-### 3. Connect Horizon Stream
+### 3. Pair a Bluetooth Controller
+Because the Meta Quest operating system blocks 2D apps from reading raw input from the Quest's motion controllers, **you must pair a Bluetooth gamepad to your headset** to play.
+1. Put your controller (e.g., PlayStation DualSense or DualShock 4) into Bluetooth pairing mode. (For PlayStation controllers, hold the **PS button** and the **Share/Create button** until the light bar flashes rapidly).
+2. On your Meta Quest, open the **Settings** menu.
+3. Navigate to **Devices > Bluetooth**.
+4. Select your controller from the list of available devices to pair it.
+
+### 4. Connect Horizon Stream
 1. Open the Horizon Stream app on your Meta Quest.
 2. Ensure your headset is on the same local network as your PS5.
 3. Select your console when it appears, or enter its IP address manually.
