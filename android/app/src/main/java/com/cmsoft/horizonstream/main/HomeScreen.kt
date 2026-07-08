@@ -14,7 +14,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
@@ -90,9 +89,6 @@ fun HomeScreen(
                     actions = {
                         IconButton(onClick = { navController.navigate("help") }) {
                             Icon(Icons.Default.Info, contentDescription = "Help", tint = Color.White)
-                        }
-                        IconButton(onClick = { navController.navigate("settings") }) {
-                            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White)
                         }
                     }
                 )
