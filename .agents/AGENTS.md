@@ -26,3 +26,4 @@ This file contains the brief history and context of the Horizon Stream project t
 - Ensure any new UI/UX changes take the Meta Quest VR environment (and dynamic window resizing) into account.
 - Maintain AGPLv3 compliance; do not add any proprietary DRM restrictions.
 - Keep branding strictly as "Horizon Stream" and avoid the original "Chiaki" name in user-facing elements.
+- Do not automatically push local changes to remote repositories; wait for explicit user confirmation before running push commands.
