@@ -22,3 +22,24 @@ In accordance with the AGPLv3:
 - **No DRM:** The software is provided without any Digital Rights Management (DRM) restrictions.
 
 A copy of the AGPLv3 license is included in the `COPYING` file.
+
+## Getting Started: Pairing with PlayStation 5
+
+To use Horizon Stream, you need to link it to your PlayStation 5 console using a Base64 encoded PSN Account ID and a Pairing PIN.
+
+### 1. Obtain Your PSN Account ID (Base64)
+Sony requires a specific 8-byte Account ID to register for Remote Play.
+1. Use a community tool like [psn.flipscreen.games](https://psn.flipscreen.games/) or the official [Chiaki Web Tool](https://streetpea.github.io/chiaki-ng/setup/configuration/#obtaining-your-psn-account-id) to fetch your ID.
+2. Make sure you copy the **Base64** formatted version (it will look like a string of random characters, ending with an `=`).
+
+### 2. Prepare Your PlayStation 5
+1. Turn on your PS5 and go to **Settings > System > Remote Play**.
+2. Toggle on **Enable Remote Play**.
+3. Select **Link Device**. The screen will display an 8-digit PIN.
+
+### 3. Connect Horizon Stream
+1. Open the Horizon Stream app on your Meta Quest.
+2. Ensure your headset is on the same local network as your PS5.
+3. Select your console when it appears, or enter its IP address manually.
+4. Input your **Base64 PSN Account ID** and the **8-digit PIN** from your TV screen.
+5. Click **Register** to complete the pairing. You're now ready to stream!
