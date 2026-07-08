@@ -261,6 +261,8 @@ fun EditManualConsoleScreen(
                     ) {
                         Text("Register & Save", fontWeight = FontWeight.Bold)
                     }
+
+                    Spacer(modifier = Modifier.height(24.dp))
                 }
             }
         }
