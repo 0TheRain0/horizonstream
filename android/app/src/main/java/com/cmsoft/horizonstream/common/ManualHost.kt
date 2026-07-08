@@ -49,7 +49,7 @@ interface ManualHostDao
 	fun assignRegisteredHost(manualHostId: Long, registeredHostId: Long?): Completable
 
 	@Insert
-	fun insert(host: ManualHost): Completable
+	fun insert(host: ManualHost): Single<Long>
 
 	@Delete
 	fun delete(host: ManualHost): Completable

@@ -33,12 +33,23 @@ class MainViewModel(val database: AppDatabase, val preferences: Preferences): Vi
 			{ manualHosts, registeredHosts, discoveredHosts ->
 				val macRegisteredHosts = registeredHosts.associateBy { it.serverMac }
 				val idRegisteredHosts = registeredHosts.associateBy { it.id }
-				discoveredHosts.map {
-					DiscoveredDisplayHost(it.serverMac?.let { mac -> macRegisteredHosts[mac] }, it)
-				} +
-				manualHosts.map {
+				
+				val mappedManual = manualHosts.map {
 					ManualDisplayHost(it.registeredHost?.let { id -> idRegisteredHosts[id] }, it)
 				}
+				
+				val manualIps = manualHosts.map { it.host }.toSet()
+				val manualMacs = mappedManual.mapNotNull { it.registeredHost?.serverMac }.toSet()
+				
+				val filteredDiscovered = discoveredHosts.filter { discovered ->
+					val ipMatches = discovered.hostAddr in manualIps
+					val macMatches = discovered.serverMac in manualMacs
+					!ipMatches && !macMatches
+				}.map {
+					DiscoveredDisplayHost(it.serverMac?.let { mac -> macRegisteredHosts[mac] }, it)
+				}
+				
+				filteredDiscovered + mappedManual
 			}
 			.toLiveData()
 	}
