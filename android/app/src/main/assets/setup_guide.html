@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Horizon Stream Setup Guide</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #0F172A;
+            color: #E2E8F0;
+            line-height: 1.6;
+            padding: 20px;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        h2 {
+            color: #38BDF8;
+            border-bottom: 1px solid #334155;
+            padding-bottom: 10px;
+            margin-top: 30px;
+        }
+        h3 {
+            color: #F8FAFC;
+            margin-top: 25px;
+        }
+        p, li {
+            font-size: 16px;
+        }
+        ul, ol {
+            margin-bottom: 20px;
+        }
+        li {
+            margin-bottom: 8px;
+        }
+        a {
+            color: #60A5FA;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        strong {
+            color: #FFFFFF;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>Getting Started: Pairing with PlayStation 5</h2>
+    <p>To use Horizon Stream, you need to link it to your PlayStation 5 console using a Base64 encoded PSN Account ID and a Pairing PIN.</p>
+
+    <h3>1. Obtain Your PSN Account ID (Base64)</h3>
+    <p>Sony requires a specific 8-byte Account ID to register for Remote Play.</p>
+    <ul>
+        <li><strong>In-App Login Helper (Recommended):</strong> During registration, tap the <strong>Retrieve Account ID via PSN Login</strong> button. This opens a secure, official Sony login portal. After signing in, the app will automatically fetch your account details, convert them into the required Base64 format, and auto-fill the field for you.</li>
+        <li><strong>External Web Tools:</strong> If you prefer, you can retrieve it manually by using a community service like <a href="https://psn.flipscreen.games/">psn.flipscreen.games</a> or the official <a href="https://streetpea.github.io/chiaki-ng/setup/configuration/#obtaining-your-psn-account-id">Chiaki Web Tool</a>. Copy the <strong>Base64</strong> formatted version (which typically ends in <code>=</code>).</li>
+    </ul>
+
+    <h3>2. Prepare Your PlayStation 5</h3>
+    <ol>
+        <li>Turn on your PS5 and go to <strong>Settings &gt; System &gt; Remote Play</strong>.</li>
+        <li>Toggle on <strong>Enable Remote Play</strong>.</li>
+        <li>Select <strong>Link Device</strong>. The screen will display an 8-digit PIN.</li>
+    </ol>
+
+    <h3>3. Pair a Bluetooth Controller</h3>
+    <p>Because the Meta Quest operating system blocks 2D apps from reading raw input from the Quest's motion controllers, <strong>you must pair a Bluetooth gamepad to your headset</strong> to play.</p>
+    <ol>
+        <li>Put your controller (e.g., PlayStation DualSense or DualShock 4) into Bluetooth pairing mode. (For PlayStation controllers, hold the <strong>PS button</strong> and the <strong>Share/Create button</strong> until the light bar flashes rapidly).</li>
+        <li>On your Meta Quest, open the <strong>Settings</strong> menu.</li>
+        <li>Navigate to <strong>Devices &gt; Bluetooth</strong>.</li>
+        <li>Select your controller from the list of available devices to pair it.</li>
+    </ol>
+
+    <h3>4. Connect Horizon Stream</h3>
+    <ol>
+        <li>Open the Horizon Stream app on your Meta Quest.</li>
+        <li>Ensure your headset is on the same local network as your PS5.</li>
+        <li>Select your console when it appears, or enter its IP address manually.</li>
+        <li>Input your <strong>Base64 PSN Account ID</strong> and the <strong>8-digit PIN</strong> from your TV screen.</li>
+        <li>Click <strong>Register</strong> to complete the pairing. You're now ready to stream!</li>
+    </ol>
+
+    <h2>Support &amp; Community</h2>
+    <p>If you need help setting up Horizon Stream, run into bugs, or want to chat with the community, join our official Discord server!</p>
+    <ul>
+        <li><strong><a href="https://discord.gg/tXhkq5BBY">Horizon Stream Discord</a></strong></li>
+    </ul>
+    <p>For questions regarding underlying core features and issues inherited from the upstream project, you can also visit the <a href="https://discord.gg/tAMbRuwXDH">chiaki-ng community Discord</a> as a secondary resource.</p>
+
+</body>
+</html>

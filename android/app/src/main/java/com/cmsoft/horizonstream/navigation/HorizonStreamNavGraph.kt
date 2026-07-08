@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.cmsoft.horizonstream.main.HelpScreen
 import com.cmsoft.horizonstream.main.HomeScreen
 import com.cmsoft.horizonstream.main.MainViewModel
 import com.cmsoft.horizonstream.manual.EditManualConsoleScreen
@@ -22,6 +23,9 @@ fun HorizonStreamNavGraph(mainViewModel: MainViewModel) {
         }
         composable("settings") {
             SettingsScreen(navController = navController)
+        }
+        composable("help") {
+            HelpScreen(navController = navController)
         }
         composable("register/{host}?broadcast={broadcast}&manualHostId={manualHostId}") { backStackEntry ->
             val host = backStackEntry.arguments?.getString("host")
