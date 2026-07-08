@@ -14,7 +14,7 @@ This file contains the brief history and context of the Horizon Stream project t
    - Initial VR-specific modifications (including a `DeviceUtils` helper and namespace migration to `com.cmsoft.horizonstream`) were ported over from a local `chiaki-ng` repository.
 
 3. **Rebranding & Licensing Compliance (AGPLv3 & Meta):**
-   - The app is intended to be distributed on the Meta Horizon Store for ~$2.
+   - The app is intended to be distributed on the Meta Horizon Store.
    - To comply with Meta's developer policies and avoid trademark infringement, the app was entirely rebranded from "Chiaki" to "Horizon Stream".
    - To comply with the AGPLv3 open-source license, the source code must remain public, the store listing must prominently link to this repository, and no additional DRM can be added to the APK.
    - Documentation (like `README.md` and `CONTRIBUTOR_GUIDE.md`) was rewritten to reflect the new branding, explicitly state AGPLv3 compliance, and include instructions on how to obtain a PSN Account ID (Base64) and pair with a PlayStation 5 using an 8-digit PIN.
