@@ -36,6 +36,7 @@ import com.cmsoft.horizonstream.common.Preferences
 import com.cmsoft.horizonstream.lib.DiscoveryHost
 import com.cmsoft.horizonstream.lib.ConnectInfo
 import com.cmsoft.horizonstream.stream.StreamActivity
+import com.cmsoft.horizonstream.BuildConfig
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -154,6 +155,15 @@ fun HomeScreen(
                         }
                     }
                 }
+
+                Text(
+                    text = "v${BuildConfig.VERSION_NAME}",
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(16.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                    style = MaterialTheme.typography.labelMedium
+                )
             }
         }
     }
