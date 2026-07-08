@@ -40,7 +40,8 @@ android {
                         "-DCHIAKI_LIB_MINIUPNPC_EXTERNAL_PROJECT=ON",
                         "-DCHIAKI_ENABLE_STEAM_SHORTCUT=OFF",
                         "-DCHIAKI_ENABLE_STEAMDECK_NATIVE=OFF",
-                        "-DANDROID_STL=c++_shared"
+                        "-DANDROID_STL=c++_shared",
+                        "-DANDROID_LINKER_FLAGS=-Wl,-z,max-page-size=16384"
             }
         }
     }
