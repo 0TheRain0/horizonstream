@@ -20,7 +20,7 @@ println("Determined Chiaki Version: $chiakiVersion")
 android {
     compileSdkVersion 34
     defaultConfig {
-        applicationId "com.metallic.chiaki"
+        applicationId "com.cmsoft.horizonstream"
         minSdkVersion 24
         targetSdkVersion 34
         versionCode 12
@@ -48,11 +48,11 @@ android {
         viewBinding true
     }
     compileOptions {
-        sourceCompatibility JavaVersion.VERSION_1_8
-        targetCompatibility JavaVersion.VERSION_1_8
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
     kotlinOptions {
-        jvmTarget = "1.8"
+        jvmTarget = "17"
     }
     externalNativeBuild {
         cmake {
@@ -73,6 +73,7 @@ android {
 
     Properties properties = new Properties()
     def propertiesFile = file("../local.properties")
+    namespace 'com.cmsoft.horizonstream'
     if (propertiesFile.exists()) {
         properties.load(propertiesFile.newDataInputStream())
     }
@@ -96,7 +97,7 @@ android {
 
 tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).all {
     kotlinOptions {
-        freeCompilerArgs += "-Xuse-experimental=kotlin.ExperimentalUnsignedTypes"
+        freeCompilerArgs += "-opt-in=kotlin.ExperimentalUnsignedTypes"
     }
 }
 

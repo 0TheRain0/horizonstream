@@ -1,10 +1,10 @@
 # Contributor Guide
 
-This file is a quick orientation for new contributors working on `chiaki-ng`.
+This file is a quick orientation for new contributors working on `Horizon Stream`.
 
 ## What This Repository Is
 
-`chiaki-ng` is a cross-platform PlayStation Remote Play client. The codebase is split into:
+`Horizon Stream` is a cross-platform PlayStation Remote Play client. The codebase is split into:
 
 - shared protocol and codec code in [`lib/`](./lib)
 - desktop GUI code in [`gui/`](./gui)

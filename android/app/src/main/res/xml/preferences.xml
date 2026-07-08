@@ -10,7 +10,7 @@
             tools:summary="@string/preferences_registered_hosts_summary"
             app:summary=" "
             app:title="@string/preferences_registered_hosts_title"
-            app:fragment="com.metallic.chiaki.settings.SettingsRegisteredHostsFragment"
+            app:fragment="com.cmsoft.horizonstream.settings.SettingsRegisteredHostsFragment"
             app:icon="@drawable/ic_console_simple"/>
 
         <SwitchPreference
@@ -47,7 +47,7 @@
             app:key="logs"
             app:summary="@string/preferences_logs_summary"
             app:title="@string/preferences_logs_title"
-            app:fragment="com.metallic.chiaki.settings.SettingsLogsFragment"
+            app:fragment="com.cmsoft.horizonstream.settings.SettingsLogsFragment"
             app:icon="@drawable/ic_log"/>
     </PreferenceCategory>
 
