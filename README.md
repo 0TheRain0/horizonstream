@@ -43,3 +43,11 @@ Sony requires a specific 8-byte Account ID to register for Remote Play.
 3. Select your console when it appears, or enter its IP address manually.
 4. Input your **Base64 PSN Account ID** and the **8-digit PIN** from your TV screen.
 5. Click **Register** to complete the pairing. You're now ready to stream!
+
+## Support & Community
+
+If you need help setting up Horizon Stream, run into bugs, or want to chat with the community, join our official Discord server!
+
+* **[Horizon Stream Discord](https://discord.gg/tXhkq5BBY)**
+
+For questions regarding underlying core features and issues inherited from the upstream project, you can also visit the [chiaki-ng community Discord](https://discord.gg/tAMbRuwXDH) as a secondary resource.
