@@ -296,8 +296,14 @@ fun EditManualConsoleScreen(
                         AndroidView(
                             factory = { context ->
                                 WebView(context).apply {
+                                    layoutParams = android.view.ViewGroup.LayoutParams(
+                                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                                        android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                                    )
                                     settings.javaScriptEnabled = true
                                     settings.domStorageEnabled = true
+                                    settings.useWideViewPort = true
+                                    settings.loadWithOverviewMode = true
                                     webViewClient = object : WebViewClient() {
                                         private fun checkRedirect(url: String?): Boolean {
                                             if (url != null && url.startsWith("https://remoteplay.dl.playstation.net/remoteplay/redirect")) {
