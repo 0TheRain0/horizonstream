@@ -81,21 +81,7 @@ fun HomeScreen(
     ) {
         Scaffold(
             containerColor = Color.Transparent, // Transparent to show gradient
-            topBar = {
-                CenterAlignedTopAppBar(
-                    title = { 
-                        Text(
-                            stringResource(R.string.app_name), 
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        ) 
-                    },
-                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                        containerColor = Color.Transparent,
-                        titleContentColor = MaterialTheme.colorScheme.onSurface
-                    )
-                )
-            },
+
             floatingActionButton = {
                 FloatingActionButton(
                     onClick = { navController.navigate("edit_manual_console/0") },
@@ -114,7 +100,9 @@ fun HomeScreen(
             ) {
                 if (displayHosts.isEmpty()) {
                     Column(
-                        modifier = Modifier.align(Alignment.Center),
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(top = 100.dp, bottom = 100.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Image(
@@ -134,7 +122,7 @@ fun HomeScreen(
                         modifier = Modifier
                             .widthIn(max = 640.dp)
                             .fillMaxSize(),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                        contentPadding = PaddingValues(start = 16.dp, top = 100.dp, end = 16.dp, bottom = 100.dp)
                     ) {
                         items(displayHosts) { host ->
                             HostItem(
