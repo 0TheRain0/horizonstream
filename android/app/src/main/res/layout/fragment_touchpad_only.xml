@@ -7,13 +7,13 @@
     android:layout_height="match_parent"
     android:clipChildren="false">
 
-    <com.metallic.chiaki.touchcontrols.ControlsBackgroundView
+    <com.cmsoft.horizonstream.touchcontrols.ControlsBackgroundView
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         tools:layout_editor_absoluteX="0dp"
         tools:layout_editor_absoluteY="90dp" />
 
-    <com.metallic.chiaki.touchcontrols.TouchpadView
+    <com.cmsoft.horizonstream.touchcontrols.TouchpadView
         android:id="@+id/touchpadView"
         android:layout_width="0dp"
         android:layout_height="0dp"

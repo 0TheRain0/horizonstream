@@ -9,7 +9,7 @@
     tools:context=".stream.StreamActivity"
     android:keepScreenOn="true">
 
-    <com.metallic.chiaki.stream.AspectRatioFrameLayout
+    <com.cmsoft.horizonstream.stream.AspectRatioFrameLayout
         android:id="@+id/aspectRatioLayout"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
@@ -18,7 +18,7 @@
             android:id="@+id/surfaceView"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"/>
-    </com.metallic.chiaki.stream.AspectRatioFrameLayout>
+    </com.cmsoft.horizonstream.stream.AspectRatioFrameLayout>
 
     <ProgressBar
         android:id="@+id/progressBar"
@@ -28,13 +28,13 @@
 
     <fragment
         android:id="@+id/controlsFragment"
-        android:name="com.metallic.chiaki.touchcontrols.DefaultTouchControlsFragment"
+        android:name="com.cmsoft.horizonstream.touchcontrols.DefaultTouchControlsFragment"
         android:layout_width="match_parent"
         android:layout_height="match_parent"/>
 
     <fragment
         android:id="@+id/touchpadOnlyFragment"
-        android:name="com.metallic.chiaki.touchcontrols.TouchpadOnlyFragment"
+        android:name="com.cmsoft.horizonstream.touchcontrols.TouchpadOnlyFragment"
         android:layout_width="match_parent"
         android:layout_height="match_parent"/>
 

@@ -5,8 +5,8 @@
 
 #define JNI_VERSION JNI_VERSION_1_6
 
-#define BASE_PACKAGE "com/metallic/chiaki/lib"
-#define JNI_FCN(name) Java_com_metallic_chiaki_lib_ChiakiNative_##name
+#define BASE_PACKAGE "com/cmsoft/horizonstream/lib"
+#define JNI_FCN(name) Java_com_cmsoft_horizonstream_lib_ChiakiNative_##name
 
 #define E (*env)
 
