@@ -82,7 +82,7 @@ fun HomeScreen(
         Scaffold(
             containerColor = Color.Transparent, // Transparent to show gradient
             topBar = {
-                TopAppBar(
+                CenterAlignedTopAppBar(
                     title = { 
                         Text(
                             stringResource(R.string.app_name), 
@@ -90,22 +90,10 @@ fun HomeScreen(
                             color = MaterialTheme.colorScheme.onSurface
                         ) 
                     },
-                    colors = TopAppBarDefaults.topAppBarColors(
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                         containerColor = Color.Transparent,
                         titleContentColor = MaterialTheme.colorScheme.onSurface
-                    ),
-                    actions = {
-                        IconButton(onClick = { viewModel.discoveryManager.active = !discoveryActive }) {
-                            Icon(
-                                painter = painterResource(if (discoveryActive) R.drawable.ic_discover_on else R.drawable.ic_discover_off),
-                                contentDescription = "Toggle Discovery",
-                                tint = if (discoveryActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        IconButton(onClick = { navController.navigate("settings") }) {
-                            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
+                    )
                 )
             },
             floatingActionButton = {
