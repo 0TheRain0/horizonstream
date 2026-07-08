@@ -29,8 +29,8 @@ To use Horizon Stream, you need to link it to your PlayStation 5 console using a
 
 ### 1. Obtain Your PSN Account ID (Base64)
 Sony requires a specific 8-byte Account ID to register for Remote Play.
-1. Use a community tool like [psn.flipscreen.games](https://psn.flipscreen.games/) or the official [Chiaki Web Tool](https://streetpea.github.io/chiaki-ng/setup/configuration/#obtaining-your-psn-account-id) to fetch your ID.
-2. Make sure you copy the **Base64** formatted version (it will look like a string of random characters, ending with an `=`).
+*   **In-App Login Helper (Recommended):** During registration, tap the **Retrieve Account ID via PSN Login** button. This opens a secure, official Sony login portal. After signing in, the app will automatically fetch your account details, convert them into the required Base64 format, and auto-fill the field for you.
+*   **External Web Tools:** If you prefer, you can retrieve it manually by using a community service like [psn.flipscreen.games](https://psn.flipscreen.games/) or the official [Chiaki Web Tool](https://streetpea.github.io/chiaki-ng/setup/configuration/#obtaining-your-psn-account-id). Copy the **Base64** formatted version (which typically ends in `=`).
 
 ### 2. Prepare Your PlayStation 5
 1. Turn on your PS5 and go to **Settings > System > Remote Play**.
