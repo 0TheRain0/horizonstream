@@ -1,6 +1,9 @@
 package com.cmsoft.horizonstream.manual
 
 import android.util.Base64
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -22,6 +25,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.cmsoft.horizonstream.R
@@ -33,6 +37,11 @@ import com.cmsoft.horizonstream.lib.Target
 import com.cmsoft.horizonstream.regist.RegistExecuteViewModel
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.schedulers.Schedulers
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 enum class ConsoleVersion(val isPS5: Boolean, val displayName: String) {
     PS5(true, "PlayStation 5"),
@@ -40,6 +49,10 @@ enum class ConsoleVersion(val isPS5: Boolean, val displayName: String) {
     PS4_GE_7(false, "PS4 (Firmware 7.0 - 7.5)"),
     PS4_LT_7(false, "PS4 (Firmware < 7.0)")
 }
+
+private const val CLIENT_ID = "ba495a24-818c-472b-b12d-ff231c1b5745"
+private const val CLIENT_SECRET = "mvaiZkRsAsI1IBkY"
+private const val PSN_LOGIN_URL = "https://auth.api.sonyentertainmentnetwork.com/2.0/oauth/authorize?service_entity=urn:service-entity:psn&response_type=code&client_id=$CLIENT_ID&redirect_uri=https://remoteplay.dl.playstation.net/remoteplay/redirect&scope=psn:clientapp referenceDataService:countryConfig.read pushNotification:webSocket.desktop.connect sessionManager:remotePlaySession.system.update&request_locale=en_US&ui=pr&service_logo=ps&layout_type=popup&smcid=remoteplay&prompt=always&PlatformPrivacyWs1=minimal&"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,6 +69,10 @@ fun EditManualConsoleScreen(
     var psnId by remember { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
     var selectedVersion by remember { mutableStateOf(ConsoleVersion.PS5) }
+
+    // PSN Helper WebView flow state
+    var showPsnWebView by remember { mutableStateOf(false) }
+    var isPsnFetching by remember { mutableStateOf(false) }
 
     val registViewModel: RegistExecuteViewModel = viewModel(
         factory = viewModelFactory { RegistExecuteViewModel(database) }
@@ -138,22 +155,38 @@ fun EditManualConsoleScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    OutlinedTextField(
-                        value = psnId,
-                        onValueChange = { psnId = it },
-                        label = { 
-                            Text(
-                                if (selectedVersion == ConsoleVersion.PS4_LT_7) 
-                                    stringResource(R.string.hint_regist_psn_online_id) 
-                                else 
-                                    stringResource(R.string.hint_regist_psn_account_id)
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = psnId,
+                            onValueChange = { psnId = it },
+                            label = { 
+                                Text(
+                                    if (selectedVersion == ConsoleVersion.PS4_LT_7) 
+                                        stringResource(R.string.hint_regist_psn_online_id) 
+                                    else 
+                                        stringResource(R.string.hint_regist_psn_account_id)
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                    }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // Premium PSN ID Helper Button
+                    TextButton(
+                        onClick = { showPsnWebView = true },
+                        modifier = Modifier.align(Alignment.Start)
+                    ) {
+                        Text(
+                            if (isPsnFetching) "Fetching Account ID..." else "Retrieve Account ID via PSN Login",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
 
                     OutlinedTextField(
                         value = pin,
@@ -232,6 +265,78 @@ fun EditManualConsoleScreen(
             }
         }
 
+        // Fullscreen WebView Dialog for PSN Login
+        if (showPsnWebView) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.95f))
+                    .padding(24.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Card(
+                    modifier = Modifier.fillMaxSize(),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                ) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF1E293B))
+                                .padding(8.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Sign In with PSN", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 12.dp))
+                            IconButton(onClick = { showPsnWebView = false }) {
+                                Text("Close", color = Color.White, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        
+                        AndroidView(
+                            factory = { context ->
+                                WebView(context).apply {
+                                    settings.javaScriptEnabled = true
+                                    settings.domStorageEnabled = true
+                                    webViewClient = object : WebViewClient() {
+                                        private fun checkRedirect(url: String?): Boolean {
+                                            if (url != null && url.startsWith("https://remoteplay.dl.playstation.net/remoteplay/redirect")) {
+                                                val uri = android.net.Uri.parse(url)
+                                                val code = uri.getQueryParameter("code")
+                                                if (code != null) {
+                                                    showPsnWebView = false
+                                                    isPsnFetching = true
+                                                    fetchPsnAccountId(code) { accountId ->
+                                                        isPsnFetching = false
+                                                        if (accountId != null) {
+                                                            psnId = accountId
+                                                        }
+                                                    }
+                                                    return true
+                                                }
+                                            }
+                                            return false
+                                        }
+
+                                        override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                                            return checkRedirect(request?.url?.toString())
+                                        }
+
+                                        override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
+                                            super.onPageStarted(view, url, favicon)
+                                            checkRedirect(url)
+                                        }
+                                    }
+                                    loadUrl(PSN_LOGIN_URL)
+                                }
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+                }
+            }
+        }
+
         // Fullscreen overlay for registration logs/progress
         if (registState == RegistExecuteViewModel.State.RUNNING || 
             registState == RegistExecuteViewModel.State.FAILED || 
@@ -290,4 +395,60 @@ fun EditManualConsoleScreen(
             }
         }
     }
+}
+
+// Background network logic to fetch and convert user_id to 64-bit base64 ID
+private fun fetchPsnAccountId(code: String, callback: (String?) -> Unit) {
+    Thread {
+        try {
+            // 1. Exchange redirect code for authorization token
+            val tokenUrl = URL("https://auth.api.sonyentertainmentnetwork.com/2.0/oauth/token")
+            val conn = tokenUrl.openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            val auth = Base64.encodeToString("$CLIENT_ID:$CLIENT_SECRET".toByteArray(), Base64.NO_WRAP)
+            conn.setRequestProperty("Authorization", "Basic $auth")
+            conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+            conn.doOutput = true
+
+            val body = "grant_type=authorization_code&code=$code&scope=psn:clientapp referenceDataService:countryConfig.read pushNotification:webSocket.desktop.connect sessionManager:remotePlaySession.system.update&redirect_uri=https://remoteplay.dl.playstation.net/remoteplay/redirect&"
+            conn.outputStream.use { os ->
+                os.write(body.toByteArray())
+            }
+
+            if (conn.responseCode != 200) {
+                callback(null)
+                return@Thread
+            }
+
+            val responseText = conn.inputStream.bufferedReader().use { it.readText() }
+            val json = JSONObject(responseText)
+            val accessToken = json.getString("access_token")
+
+            // 2. Fetch profile user_id using access token
+            val userUrl = URL("https://auth.api.sonyentertainmentnetwork.com/2.0/oauth/token/$accessToken")
+            val conn2 = userUrl.openConnection() as HttpURLConnection
+            conn2.requestMethod = "GET"
+            conn2.setRequestProperty("Authorization", "Basic $auth")
+            conn2.setRequestProperty("Content-Type", "application/json")
+
+            if (conn2.responseCode != 200) {
+                callback(null)
+                return@Thread
+            }
+
+            val responseText2 = conn2.inputStream.bufferedReader().use { it.readText() }
+            val json2 = JSONObject(responseText2)
+            val userIdStr = json2.getString("user_id")
+            val userId = userIdStr.toLong()
+
+            // 3. Serialize user_id to 8-bytes in little endian format, then encode to Base64
+            val buffer = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putLong(userId).array()
+            val base64Id = Base64.encodeToString(buffer, Base64.NO_WRAP)
+            
+            callback(base64Id)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            callback(null)
+        }
+    }.start()
 }
