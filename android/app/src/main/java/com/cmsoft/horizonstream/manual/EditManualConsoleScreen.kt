@@ -271,7 +271,7 @@ fun EditManualConsoleScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(Color.Black.copy(alpha = 0.95f))
-                    .padding(24.dp),
+                    .padding(8.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Card(
@@ -283,13 +283,13 @@ fun EditManualConsoleScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .background(Color(0xFF1E293B))
-                                .padding(8.dp),
+                                .padding(horizontal = 12.dp, vertical = 6.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Sign In with PSN", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.padding(start = 12.dp))
-                            IconButton(onClick = { showPsnWebView = false }) {
-                                Text("Close", color = Color.White, fontWeight = FontWeight.Bold)
+                            Text("Sign In with PSN", color = Color.White, fontWeight = FontWeight.Bold)
+                            TextButton(onClick = { showPsnWebView = false }) {
+                                Text("Close", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
                             }
                         }
                         
@@ -330,7 +330,7 @@ fun EditManualConsoleScreen(
                                     loadUrl(PSN_LOGIN_URL)
                                 }
                             },
-                            modifier = Modifier.fillMaxSize()
+                            modifier = Modifier.weight(1f).fillMaxWidth()
                         )
                     }
                 }
