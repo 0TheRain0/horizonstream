@@ -248,6 +248,15 @@ class StreamActivity : AppCompatActivity(), View.OnSystemUiVisibilityChangeListe
 								dialog = null
 								reconnect()
 							}
+							.setNeutralButton(R.string.action_wakeup) { _, _ ->
+								intent.getParcelableExtra<ConnectInfo>(EXTRA_CONNECT_INFO)?.let { info ->
+									com.cmsoft.horizonstream.discovery.DiscoveryManager().sendWakeup(
+										info.host, info.registKey, info.ps5
+									)
+								}
+								dialog = null
+								finish()
+							}
 							.setOnCancelListener {
 								dialog = null
 								finish()
