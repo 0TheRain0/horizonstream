@@ -6,6 +6,7 @@ nav:
   - Home: index.md
   - Setup:
     - Setup Overview: setup/index.md
+    - Horizon Stream on Quest: setup/quest.md
     - Installation: setup/installation.md
     - Configuration: setup/configuration.md
     - Remote Connection: setup/remoteconnection.md

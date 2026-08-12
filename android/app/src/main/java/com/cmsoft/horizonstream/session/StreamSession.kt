@@ -93,6 +93,12 @@ class StreamSession(val connectInfo: ConnectInfo, val logManager: LogManager, va
 		}
 	}
 
+	fun setSurface(surface: Surface?)
+	{
+		this.surface = surface
+		session?.setSurface(surface)
+	}
+
 	fun attachToSurfaceView(surfaceView: SurfaceView)
 	{
 		surfaceView.holder.addCallback(object: SurfaceHolder.Callback {

@@ -1,9 +1,6 @@
 package com.cmsoft.horizonstream.manual
 
 import android.util.Base64
-import android.webkit.WebResourceRequest
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -26,7 +23,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.cmsoft.horizonstream.R
@@ -38,11 +36,7 @@ import com.cmsoft.horizonstream.lib.Target
 import com.cmsoft.horizonstream.regist.RegistExecuteViewModel
 import io.reactivex.android.schedulers.AndroidSchedulers
 import io.reactivex.schedulers.Schedulers
-import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
+import kotlinx.coroutines.launch
 
 enum class ConsoleVersion(val isPS5: Boolean, val displayName: String) {
     PS5(true, "PlayStation 5"),
@@ -50,11 +44,6 @@ enum class ConsoleVersion(val isPS5: Boolean, val displayName: String) {
     PS4_GE_7(false, "PS4 (Firmware 7.0 - 7.5)"),
     PS4_LT_7(false, "PS4 (Firmware < 7.0)")
 }
-
-private const val CLIENT_ID = "ba495a24-818c-472b-b12d-ff231c1b5745"
-private const val CLIENT_SECRET = "mvaiZkRsAsI1IBkY"
-private const val PSN_LOGIN_URL = "https://auth.api.sonyentertainmentnetwork.com/2.0/oauth/authorize?service_entity=urn:service-entity:psn&response_type=code&client_id=$CLIENT_ID&redirect_uri=https://remoteplay.dl.playstation.net/remoteplay/redirect&scope=psn:clientapp referenceDataService:countryConfig.read pushNotification:webSocket.desktop.connect sessionManager:remotePlaySession.system.update&request_locale=en_US&ui=pr&service_logo=ps&layout_type=popup&smcid=remoteplay&prompt=always&PlatformPrivacyWs1=minimal&"
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditManualConsoleScreen(
@@ -71,15 +60,34 @@ fun EditManualConsoleScreen(
     var pin by remember { mutableStateOf("") }
     var selectedVersion by remember { mutableStateOf(ConsoleVersion.PS5) }
 
-    // PSN Helper WebView flow state
-    var showPsnWebView by remember { mutableStateOf(false) }
-    var isPsnFetching by remember { mutableStateOf(false) }
+    var showQrScanner by remember { mutableStateOf(false) }
+    var psnRedirectUrl by remember { mutableStateOf("") }
+    var psnLookupError by remember { mutableStateOf<String?>(null) }
+    var isRetrievingPsnAccountId by remember { mutableStateOf(false) }
+    var isPsnAccountIdCapturedFromQr by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
 
     val registViewModel: RegistExecuteViewModel = viewModel(
         factory = viewModelFactory { RegistExecuteViewModel(database) }
     )
     val registState by registViewModel.state.observeAsState(RegistExecuteViewModel.State.IDLE)
     val logText by registViewModel.logText.observeAsState("")
+
+    fun retrievePsnAccountId(redirectUrl: String, wasScannedFromQr: Boolean = false) {
+        coroutineScope.launch {
+            isRetrievingPsnAccountId = true
+            psnLookupError = null
+            try {
+                psnId = PsnAccountIdLogin.retrieveAccountId(redirectUrl)
+                psnRedirectUrl = ""
+                isPsnAccountIdCapturedFromQr = wasScannedFromQr
+            } catch (error: PsnLoginException) {
+                psnLookupError = error.message
+            } finally {
+                isRetrievingPsnAccountId = false
+            }
+        }
+    }
 
     // Handle navigation pop on successful registration
     LaunchedEffect(registState) {
@@ -161,43 +169,180 @@ fun EditManualConsoleScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    Box(modifier = Modifier.fillMaxWidth()) {
+                    if (selectedVersion != ConsoleVersion.PS4_LT_7) {
+                        Text(
+                            "1. Get your PSN Account ID",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.align(Alignment.Start)
+                        )
+                        Text(
+                            "Do this before getting the temporary Link Device code from your console. The recommended method is to sign in on your computer and scan the redirect QR code with your Quest.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.LightGray,
+                            modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
+                        )
+
+                        if (!isPsnAccountIdCapturedFromQr) {
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+                                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text(
+                                        "Recommended: scan a sign-in QR code",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        "1. On your computer, open the Horizon Stream Chrome extension.\n" +
+                                            "2. Select Open PS Remote Play sign-in and finish signing in to PSN.\n" +
+                                            "3. Reopen the extension when it shows the QR code, then scan it below.",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Button(
+                                        onClick = { showQrScanner = true },
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            "Scan sign-in QR code",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        if (!isPsnAccountIdCapturedFromQr) {
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Text(
+                                "Other ways to provide your Account ID",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.align(Alignment.Start)
+                            )
+                            Text(
+                                "If you obtained an Account ID elsewhere, paste its Base64 value below. Or paste a one-time PS Remote Play redirect URL and let Horizon Stream retrieve the ID.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color.LightGray,
+                                modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
+                            )
+                        }
+
+                        OutlinedTextField(
+                            value = psnId,
+                            onValueChange = {
+                                psnId = it
+                                isPsnAccountIdCapturedFromQr = false
+                            },
+                            label = { Text(stringResource(R.string.hint_regist_psn_account_id)) },
+                            placeholder = { Text("8-byte Base64 Account ID") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+
+                        if (isPsnAccountIdCapturedFromQr) {
+                            Text(
+                                "Sign-in QR code captured successfully. Your Account ID is ready.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .align(Alignment.Start)
+                                    .padding(top = 6.dp)
+                            )
+                        } else {
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            OutlinedTextField(
+                                value = psnRedirectUrl,
+                                onValueChange = {
+                                    psnRedirectUrl = it
+                                    psnLookupError = null
+                                },
+                                label = { Text("PS Remote Play redirect URL") },
+                                placeholder = { Text("https://remoteplay.dl.playstation.net/remoteplay/redirect?code=…") },
+                                modifier = Modifier.fillMaxWidth(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                                minLines = 3,
+                                maxLines = 4
+                            )
+                            Button(
+                                onClick = {
+                                    retrievePsnAccountId(psnRedirectUrl)
+                                },
+                                enabled = psnRedirectUrl.isNotBlank() && !isRetrievingPsnAccountId,
+                                modifier = Modifier.align(Alignment.Start)
+                            ) {
+                                if (isRetrievingPsnAccountId) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.onPrimary
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                }
+                                Text(if (isRetrievingPsnAccountId) "Retrieving Account ID…" else "Use redirect URL")
+                            }
+                            psnLookupError?.let {
+                                Text(
+                                    it,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.padding(top = 6.dp)
+                                )
+                            }
+                        }
+                    } else {
+                        Text(
+                            "1. Enter your PSN Online ID",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.align(Alignment.Start)
+                        )
+                        Text(
+                            "Pre-7.0 PS4 registration uses your PSN Online ID instead of an Account ID.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.LightGray,
+                            modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
+                        )
                         OutlinedTextField(
                             value = psnId,
                             onValueChange = { psnId = it },
-                            label = { 
-                                Text(
-                                    if (selectedVersion == ConsoleVersion.PS4_LT_7) 
-                                        stringResource(R.string.hint_regist_psn_online_id) 
-                                    else 
-                                        stringResource(R.string.hint_regist_psn_account_id)
-                                )
-                            },
+                            label = { Text(stringResource(R.string.hint_regist_psn_online_id)) },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(6.dp))
+                    Spacer(modifier = Modifier.height(20.dp))
 
-                    // Premium PSN ID Helper Button
-                    TextButton(
-                        onClick = { showPsnWebView = true },
+                    Text(
+                        "2. Get your console Link Device code",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
                         modifier = Modifier.align(Alignment.Start)
-                    ) {
-                        Text(
-                            if (isPsnFetching) "Fetching Account ID..." else "Retrieve Account ID via PSN Login",
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(6.dp))
-
+                    )
+                    Text(
+                        if (selectedVersion.isPS5) {
+                            "Now, on your PS5, open Settings → System → Remote Play → Link Device. Enter the temporary 8-digit code shown there. It expires quickly and is not your PSN password or sign-in PIN."
+                        } else {
+                            "Now, on your PS4, open Settings → Remote Play Connection Settings → Add Device. Enter the temporary 8-digit code shown there."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.LightGray,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 8.dp)
+                    )
                     OutlinedTextField(
                         value = pin,
                         onValueChange = { if (it.length <= 8) pin = it },
-                        label = { Text("8-Digit PSN PIN") },
+                        label = { Text("8-Digit Console Link Device Code") },
                         modifier = Modifier.fillMaxWidth(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                         singleLine = true
@@ -207,7 +352,7 @@ fun EditManualConsoleScreen(
 
                     // Console Version Selector
                     Text(
-                        text = "Console Version",
+                        text = "3. Select console version",
                         style = MaterialTheme.typography.titleSmall,
                         modifier = Modifier.align(Alignment.Start),
                         color = MaterialTheme.colorScheme.primary
@@ -263,90 +408,12 @@ fun EditManualConsoleScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp),
-                        enabled = consoleName.isNotBlank() && hostAddress.isNotBlank() && psnId.isNotBlank() && pin.length == 8
+                        enabled = consoleName.isNotBlank() && hostAddress.isNotBlank() && psnId.isNotBlank() && pin.length == 8 && pin.all(Char::isDigit)
                     ) {
                         Text("Register & Save", fontWeight = FontWeight.Bold)
                     }
 
                     Spacer(modifier = Modifier.height(24.dp))
-                }
-            }
-        }
-
-        // Fullscreen WebView Dialog for PSN Login
-        if (showPsnWebView) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.95f))
-                    .padding(8.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Card(
-                    modifier = Modifier.fillMaxSize(),
-                    colors = CardDefaults.cardColors(containerColor = Color.White)
-                ) {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color(0xFF1E293B))
-                                .padding(horizontal = 12.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Sign In with PSN", color = Color.White, fontWeight = FontWeight.Bold)
-                            TextButton(onClick = { showPsnWebView = false }) {
-                                Text("Close", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                        
-                        AndroidView(
-                            factory = { context ->
-                                WebView(context).apply {
-                                    layoutParams = android.view.ViewGroup.LayoutParams(
-                                        android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                                        android.view.ViewGroup.LayoutParams.MATCH_PARENT
-                                    )
-                                    settings.javaScriptEnabled = true
-                                    settings.domStorageEnabled = true
-                                    settings.useWideViewPort = true
-                                    settings.loadWithOverviewMode = true
-                                    webViewClient = object : WebViewClient() {
-                                        private fun checkRedirect(url: String?): Boolean {
-                                            if (url != null && url.startsWith("https://remoteplay.dl.playstation.net/remoteplay/redirect")) {
-                                                val uri = android.net.Uri.parse(url)
-                                                val code = uri.getQueryParameter("code")
-                                                if (code != null) {
-                                                    showPsnWebView = false
-                                                    isPsnFetching = true
-                                                    fetchPsnAccountId(code) { accountId ->
-                                                        isPsnFetching = false
-                                                        if (accountId != null) {
-                                                            psnId = accountId
-                                                        }
-                                                    }
-                                                    return true
-                                                }
-                                            }
-                                            return false
-                                        }
-
-                                        override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                                            return checkRedirect(request?.url?.toString())
-                                        }
-
-                                        override fun onPageStarted(view: WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-                                            super.onPageStarted(view, url, favicon)
-                                            checkRedirect(url)
-                                        }
-                                    }
-                                    loadUrl(PSN_LOGIN_URL)
-                                }
-                            },
-                            modifier = Modifier.weight(1f).fillMaxWidth()
-                        )
-                    }
                 }
             }
         }
@@ -409,60 +476,28 @@ fun EditManualConsoleScreen(
             }
         }
     }
-}
 
-// Background network logic to fetch and convert user_id to 64-bit base64 ID
-private fun fetchPsnAccountId(code: String, callback: (String?) -> Unit) {
-    Thread {
-        try {
-            // 1. Exchange redirect code for authorization token
-            val tokenUrl = URL("https://auth.api.sonyentertainmentnetwork.com/2.0/oauth/token")
-            val conn = tokenUrl.openConnection() as HttpURLConnection
-            conn.requestMethod = "POST"
-            val auth = Base64.encodeToString("$CLIENT_ID:$CLIENT_SECRET".toByteArray(), Base64.NO_WRAP)
-            conn.setRequestProperty("Authorization", "Basic $auth")
-            conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
-            conn.doOutput = true
-
-            val body = "grant_type=authorization_code&code=$code&scope=psn:clientapp referenceDataService:countryConfig.read pushNotification:webSocket.desktop.connect sessionManager:remotePlaySession.system.update&redirect_uri=https://remoteplay.dl.playstation.net/remoteplay/redirect&"
-            conn.outputStream.use { os ->
-                os.write(body.toByteArray())
-            }
-
-            if (conn.responseCode != 200) {
-                callback(null)
-                return@Thread
-            }
-
-            val responseText = conn.inputStream.bufferedReader().use { it.readText() }
-            val json = JSONObject(responseText)
-            val accessToken = json.getString("access_token")
-
-            // 2. Fetch profile user_id using access token
-            val userUrl = URL("https://auth.api.sonyentertainmentnetwork.com/2.0/oauth/token/$accessToken")
-            val conn2 = userUrl.openConnection() as HttpURLConnection
-            conn2.requestMethod = "GET"
-            conn2.setRequestProperty("Authorization", "Basic $auth")
-            conn2.setRequestProperty("Content-Type", "application/json")
-
-            if (conn2.responseCode != 200) {
-                callback(null)
-                return@Thread
-            }
-
-            val responseText2 = conn2.inputStream.bufferedReader().use { it.readText() }
-            val json2 = JSONObject(responseText2)
-            val userIdStr = json2.getString("user_id")
-            val userId = userIdStr.toLong()
-
-            // 3. Serialize user_id to 8-bytes in little endian format, then encode to Base64
-            val buffer = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putLong(userId).array()
-            val base64Id = Base64.encodeToString(buffer, Base64.NO_WRAP)
-            
-            callback(base64Id)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            callback(null)
+    if (showQrScanner) {
+        Dialog(
+            onDismissRequest = { showQrScanner = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            AccountIdQrScanner(
+                onTransferScanned = { transfer ->
+                    showQrScanner = false
+                    when (transfer) {
+                        is PsnQrTransfer.AccountId -> {
+                            psnId = transfer.value
+                            isPsnAccountIdCapturedFromQr = true
+                        }
+                        is PsnQrTransfer.RedirectUrl -> {
+                            psnRedirectUrl = transfer.value
+                            retrievePsnAccountId(transfer.value, wasScannedFromQr = true)
+                        }
+                    }
+                },
+                onDismissRequest = { showQrScanner = false }
+            )
         }
-    }.start()
+    }
 }

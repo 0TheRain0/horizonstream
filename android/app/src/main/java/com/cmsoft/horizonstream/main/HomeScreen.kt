@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.livedata.observeAsState
@@ -32,6 +33,7 @@ import com.cmsoft.horizonstream.R
 import com.cmsoft.horizonstream.common.DiscoveredDisplayHost
 import com.cmsoft.horizonstream.common.DisplayHost
 import com.cmsoft.horizonstream.common.ManualDisplayHost
+import com.cmsoft.horizonstream.common.DeviceUtils
 import com.cmsoft.horizonstream.common.Preferences
 import com.cmsoft.horizonstream.lib.DiscoveryHost
 import com.cmsoft.horizonstream.lib.ConnectInfo
@@ -61,7 +63,14 @@ fun HomeScreen(
             registeredHost.rpKey, 
             Preferences(context).videoProfile
         )
-        val intent = Intent(context, StreamActivity::class.java).apply {
+        val targetActivityClass = if (DeviceUtils.isQuest() && Preferences(context).immersiveVrModeEnabled) {
+            com.cmsoft.horizonstream.stream.VRStreamActivity::class.java
+        } else {
+            StreamActivity::class.java
+        }
+        // Keep the immersive activity explicit. It requires ConnectInfo and is
+        // not an app-entry activity, so it must never be resolved as MAIN/VR.
+        val intent = Intent(context, targetActivityClass).apply {
             putExtra(StreamActivity.EXTRA_CONNECT_INFO, connectInfo)
         }
         context.startActivity(intent)
@@ -89,6 +98,9 @@ fun HomeScreen(
                     actions = {
                         IconButton(onClick = { navController.navigate("help") }) {
                             Icon(Icons.Default.Info, contentDescription = "Help", tint = Color.White)
+                        }
+                        IconButton(onClick = { navController.navigate("settings") }) {
+                            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White)
                         }
                     }
                 )

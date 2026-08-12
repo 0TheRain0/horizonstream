@@ -1,5 +1,7 @@
 # Research: Meta Quest Touch Controllers as Gamepads in Flat Android Apps
 
+> **Historical note:** This document records the original flat-Android investigation. It is no longer a description of Horizon Stream's current behavior. Horizon Stream now provides **experimental Quest Touch controller emulation through its immersive OpenXR stream path**. See [Horizon Stream on Quest](setup/quest.md) and [Controller Options](setup/controlling.md) for current user instructions and mappings.
+
 This document outlines the design, mapping logic, and technical hurdles encountered while attempting to support standalone Meta Quest Touch controllers as gamepads inside Horizon Stream (a flat 2D Android app).
 
 ---

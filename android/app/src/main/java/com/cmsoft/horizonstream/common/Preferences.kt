@@ -128,6 +128,36 @@ class Preferences(context: Context)
 		}  ?: codecDefault
 		set(value) { sharedPreferences.edit().putString(codecKey, value.value).apply() }
 
+	val questControllerEmulationKey get() = resources.getString(R.string.preferences_quest_controller_emulation_key)
+	var questControllerEmulationEnabled
+		get() = sharedPreferences.getBoolean(questControllerEmulationKey, true)
+		set(value) { sharedPreferences.edit().putBoolean(questControllerEmulationKey, value).apply() }
+
+	val immersiveVrModeKey get() = resources.getString(R.string.preferences_immersive_vr_mode_key)
+	var immersiveVrModeEnabled
+		get() = sharedPreferences.getBoolean(immersiveVrModeKey, true)
+		set(value) { sharedPreferences.edit().putBoolean(immersiveVrModeKey, value).apply() }
+
+	val simulated3dEnabledKey get() = resources.getString(R.string.preferences_simulated_3d_enabled_key)
+	var simulated3dEnabled
+		get() = sharedPreferences.getBoolean(simulated3dEnabledKey, false)
+		set(value) { sharedPreferences.edit().putBoolean(simulated3dEnabledKey, value).apply() }
+
+	val simulated3dIntensityKey get() = resources.getString(R.string.preferences_simulated_3d_intensity_key)
+	var simulated3dIntensity
+		get() = sharedPreferences.getString(simulated3dIntensityKey, "medium") ?: "medium"
+		set(value) { sharedPreferences.edit().putString(simulated3dIntensityKey, value).apply() }
+
+	val streamSettingsButtonBindingKey
+		get() = resources.getString(R.string.preferences_stream_settings_button_binding_key)
+	var streamSettingsButtonBinding: String?
+		get() = sharedPreferences.getString(streamSettingsButtonBindingKey, null)
+		set(value) {
+			sharedPreferences.edit()
+				.putString(streamSettingsButtonBindingKey, value)
+				.apply()
+		}
+
 	private val videoProfileDefaultBitrate get() = ConnectVideoProfile.preset(resolution.preset, fps.preset, codec.codec)
 	val videoProfile get() = videoProfileDefaultBitrate.let {
 		val bitrate = bitrate

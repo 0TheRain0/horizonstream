@@ -41,3 +41,13 @@ chiaki.conf
 site/
 *.keystore
 local.properties
+
+# Locally generated Chrome extension signing material and deployment artifacts.
+/chrome-extension/keys/
+/chrome-extension/dist/
+/chrome-extension/native-host/horizonstream-psn-account-id-host
+/chrome-extension/**/*.pem
+/chrome-extension/**/*.key
+/chrome-extension/**/*.p12
+/chrome-extension/**/*.pfx
+/chrome-extension/**/*.crx

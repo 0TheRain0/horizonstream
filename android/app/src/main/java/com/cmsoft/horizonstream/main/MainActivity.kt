@@ -4,10 +4,12 @@ package com.cmsoft.horizonstream.main
 
 import android.content.pm.ActivityInfo
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.lifecycle.ViewModelProvider
 import com.cmsoft.horizonstream.common.DeviceUtils
+import com.cmsoft.horizonstream.common.ControllerAssignmentLearner
 import com.cmsoft.horizonstream.common.Preferences
 import com.cmsoft.horizonstream.common.ext.viewModelFactory
 import com.cmsoft.horizonstream.common.getDatabase
@@ -24,6 +26,8 @@ class MainActivity : ComponentActivity() {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         }
 
+        DeviceUtils.applyImmersiveMode(this, Preferences(this).immersiveVrModeEnabled)
+
         viewModel = ViewModelProvider(this, viewModelFactory { MainViewModel(getDatabase(this), Preferences(this)) })
             .get(MainViewModel::class.java)
 
@@ -31,6 +35,18 @@ class MainActivity : ComponentActivity() {
             HorizonStreamTheme {
                 HorizonStreamNavGraph(mainViewModel = viewModel)
             }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        DeviceUtils.applyImmersiveMode(this, Preferences(this).immersiveVrModeEnabled)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            DeviceUtils.applyImmersiveMode(this, Preferences(this).immersiveVrModeEnabled)
         }
     }
 
@@ -42,5 +58,10 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         viewModel.discoveryManager.pause()
+    }
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        return ControllerAssignmentLearner.captureKeyEvent(event) ||
+            super.onKeyDown(keyCode, event)
     }
 }

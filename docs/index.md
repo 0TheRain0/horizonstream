@@ -1,12 +1,21 @@
-# PlayStation Remote Play for Everyone
+# Horizon Stream for Meta Quest
 
-!!! Abstract "Site Purpose"
+Horizon Stream is an open-source PlayStation Remote Play client for Meta Quest headsets. It is a Quest-focused fork of [chiaki-ng](https://github.com/streetpea/chiaki-ng){target="_blank" rel="noopener"}, built on the Chiaki Remote Play implementation.
 
-    This site serves to get you up and running with chiaki-ng!
+## Start here
 
-## Getting Started
+Follow the [Horizon Stream on Quest guide](setup/quest.md) to register a console with the Chrome redirect-QR transfer, configure immersive streaming, and use Quest Touch controller emulation or AI 2D-to-3D depth.
 
-Start by visiting the [Setup section](setup/index.md){target="_blank" rel="noopener"} and following each of the subsections to learn how to setup `chiaki-ng`.
+!!! Warning "Experimental Quest features"
+
+    Immersive VR Mode, Quest Touch controller emulation, and AI 2D-to-3D conversion are experimental. They may use more battery, add latency, or show visual/input issues. Keep a standard Bluetooth gamepad available when reliability matters.
+
+## Quest documentation
+
+- [Horizon Stream on Quest](setup/quest.md) — Quest registration, streaming, and experimental features.
+- [Controller Options](setup/controlling.md) — Quest Touch mappings plus the inherited desktop and Steam Deck notes.
+
+## Upstream chiaki-ng reference
 
 ## Supporting
 

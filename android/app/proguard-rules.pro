@@ -21,7 +21,21 @@
 #-renamesourcefileattribute SourceFile
 
 -dontobfuscate
--keep class com.metallic.chiaki.** { *; }
+
+# The native Chiaki bridge uses JNI FindClass/GetFieldID/GetMethodID calls for
+# this package.  Keep the implementation, fields, constructors and callbacks
+# intact in release builds.  (The old rule pointed to Chiaki's former package
+# name, so R8 could remove DiscoveryServiceOptions.hostsMax and abort startup.)
+-keep class com.cmsoft.horizonstream.lib.** { *; }
+
+# These classes are called from the native Quest rendering/controller bridge.
+-keep class com.cmsoft.horizonstream.stream.VRStreamActivity { *; }
+-keep class com.cmsoft.horizonstream.depth.DepthAnythingV2Bridge { *; }
+
+# Room creates the generated database implementation reflectively. R8 removed
+# AppDatabase_Impl's no-argument constructor from the release APK, which made
+# every fresh release install crash before MainActivity could render.
+-keep class com.cmsoft.horizonstream.common.AppDatabase_Impl { *; }
 
 
 ##########################################

@@ -1,5 +1,51 @@
 # Controller Configuration
 
+## Horizon Stream on Meta Quest
+
+For complete Quest setup instructions, see [Horizon Stream on Quest](quest.md). The remainder of this page documents the inherited desktop and Steam Deck controller workflows.
+
+!!! Warning "Experimental Touch controller support"
+
+    Quest Touch controller gamepad emulation works only while **Immersive VR Mode** is enabled. It is experimental; use a Bluetooth controller if a particular game needs the most reliable input behavior.
+
+### Enable Quest Touch controller emulation
+
+1. In Horizon Stream, open **Settings**.
+2. Under **Quest & VR Hardware**, enable **Immersive VR Mode (Experimental)**.
+3. Enable **Quest Controller Gamepad Emulation**.
+4. Start a new stream. The Touch controllers are read directly by the immersive OpenXR session and sent to the PlayStation as a virtual controller.
+
+### Quest Touch to PlayStation mapping
+
+| Quest input | PlayStation input |
+|---|---|
+| Left stick | Left stick |
+| Right stick | Right stick / camera |
+| A / B | Cross / Circle |
+| X / Y | Square / Triangle |
+| Left / right trigger | L2 / R2 |
+| Right grip | R1 |
+| Left grip | L1, unless using the left-stick D-pad chord |
+| Left grip + left stick | D-pad |
+| Stick clicks | L3 / R3 |
+| Menu + X | Share |
+| Menu + Y | PlayStation button |
+| Menu + left-stick click | Touchpad click |
+
+The **Quest Menu** button is reserved by Horizon Stream and cannot be learned as a custom assignment:
+
+- Tap once: sends PlayStation **Options** after a short delay and briefly displays the exit hint.
+- Double-tap: sends the PlayStation button, unless a Menu chord is being used.
+- Long-press: exits the stream and returns to the connections page.
+
+### Assign another exit button
+
+Open **Settings → Controls & Input → Exit Stream Button**, then choose the item and press the controller button you want to learn. That button exits the current stream instead of being passed to the game. Choose **Clear assignment** in the same dialog to remove it.
+
+The learned exit button may come from a Bluetooth gamepad or from an assignable Quest Touch button. Quest Menu remains reserved for the gestures above.
+
+---
+
 ## Configuring Steam Deck Controller Profile
 
 !!! Tip

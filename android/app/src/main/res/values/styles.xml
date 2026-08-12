@@ -18,6 +18,14 @@
         <item name="android:textColorSecondary">#fff</item>
     </style>
 
+    <style name="AppTheme.Transparent" parent="AppTheme">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowDisablePreview">true</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
+
     <style name="AppTheme.FloatingActionButtonSpeedDial">
         <item name="tint">@color/floating_action_button_speed_dial_tint</item>
         <item name="android:backgroundTint">@color/floating_action_button_speed_dial_background</item>
@@ -109,7 +117,17 @@
         <item name="colorAccent">@color/accent</item>
         <item name="materialAlertDialogTheme">@style/AppTheme.AlertDialog</item>
         <item name="android:windowBackground">@color/stream_background</item>
-        <item name="android:windowTranslucentStatus">true</item>
-        <item name="android:windowTranslucentNavigation">true</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+
+    <!-- Quest's VR launcher expects the immersive activity to use an opaque,
+         fullscreen window while OpenXR takes ownership of presentation. -->
+    <style name="VRStreamTheme" parent="StreamTheme">
+        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowDisablePreview">true</item>
     </style>
 </resources>

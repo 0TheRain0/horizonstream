@@ -52,20 +52,23 @@
 
     <h3>1. Obtain Your PSN Account ID (Base64)</h3>
     <p>Sony requires a specific 8-byte Account ID to register for Remote Play.</p>
-    <ul>
-        <li><strong>In-App Login Helper (Recommended):</strong> During registration, tap the <strong>Retrieve Account ID via PSN Login</strong> button. This opens a secure, official Sony login portal. After signing in, the app will automatically fetch your account details, convert them into the required Base64 format, and auto-fill the field for you.</li>
-        <li><strong>External Web Tools:</strong> If you prefer, you can retrieve it manually by using a community service like <a href="https://psn.flipscreen.games/">psn.flipscreen.games</a> or the official <a href="https://streetpea.github.io/chiaki-ng/setup/configuration/#obtaining-your-psn-account-id">Chiaki Web Tool</a>. Copy the <strong>Base64</strong> formatted version (which typically ends in <code>=</code>).</li>
-    </ul>
+    <p>Use the Chrome QR transfer before obtaining a console Link Device code:</p>
+    <ol>
+        <li>In the Horizon Stream Chrome extension, select <strong>Open PS Remote Play sign-in</strong> and complete Sony's normal sign-in in Chrome.</li>
+        <li>Reopen the extension when it displays the sign-in QR code.</li>
+        <li>In Horizon Stream registration, select <strong>Scan sign-in QR code</strong> and look at that code through the headset. Horizon Stream completes the Account-ID lookup locally.</li>
+    </ol>
+    <p>The QR code contains a one-time PS Remote Play redirect URL, so scan it immediately and never share it. Alternatively, paste that complete redirect URL directly into Horizon Stream, or paste a Base64 Account ID obtained through another method.</p>
 
-    <h3>2. Prepare Your PlayStation 5</h3>
+    <h3>2. Obtain a fresh Link Device code from your PlayStation 5</h3>
     <ol>
         <li>Turn on your PS5 and go to <strong>Settings &gt; System &gt; Remote Play</strong>.</li>
         <li>Toggle on <strong>Enable Remote Play</strong>.</li>
         <li>Select <strong>Link Device</strong>. The screen will display an 8-digit PIN.</li>
     </ol>
 
-    <h3>3. Pair a Bluetooth Controller</h3>
-    <p>Because the Meta Quest operating system blocks 2D apps from reading raw input from the Quest's motion controllers, <strong>you must pair a Bluetooth gamepad to your headset</strong> to play.</p>
+    <h3>3. Choose a Controller</h3>
+    <p><strong>Quest Controller Gamepad Emulation</strong> is available experimentally in Immersive VR Mode. Pair a Bluetooth controller when you prefer conventional or more reliable gamepad input.</p>
     <ol>
         <li>Put your controller (e.g., PlayStation DualSense or DualShock 4) into Bluetooth pairing mode. (For PlayStation controllers, hold the <strong>PS button</strong> and the <strong>Share/Create button</strong> until the light bar flashes rapidly).</li>
         <li>On your Meta Quest, open the <strong>Settings</strong> menu.</li>
@@ -78,9 +81,29 @@
         <li>Open the Horizon Stream app on your Meta Quest.</li>
         <li>Ensure your headset is on the same local network as your PS5.</li>
         <li>Select your console when it appears, or enter its IP address manually.</li>
-        <li>Input your <strong>Base64 PSN Account ID</strong> and the <strong>8-digit PIN</strong> from your TV screen.</li>
+        <li>First provide your <strong>Base64 PSN Account ID</strong> using the QR transfer, a redirect URL, or an Account ID obtained elsewhere. Then obtain and enter the fresh <strong>8-digit Link Device code</strong> from your console screen. This is not your PSN password or sign-in PIN.</li>
         <li>Click <strong>Register</strong> to complete the pairing. You're now ready to stream!</li>
     </ol>
+
+    <h2>Quest Streaming Features</h2>
+    <p>Horizon Stream includes experimental immersive features configured from the app's <strong>Settings</strong> screen.</p>
+
+    <h3>Immersive VR Mode</h3>
+    <p><strong>Immersive VR Mode (Experimental)</strong> presents the stream as a head-tracked spatial screen. It is required for Quest Touch controller emulation and AI 2D-to-3D depth.</p>
+
+    <h3>Quest Touch Controller Emulation</h3>
+    <p><strong>Quest Controller Gamepad Emulation</strong> maps Quest Touch controllers to a virtual PlayStation controller during immersive streams. A/B map to Cross/Circle, X/Y to Square/Triangle, the triggers map to L2/R2, and the sticks map to the PlayStation sticks. Hold the left grip while using the left stick for the D-pad.</p>
+    <ul>
+        <li>Tap Quest <strong>Menu</strong>: PlayStation Options.</li>
+        <li>Double-tap Quest <strong>Menu</strong>: PlayStation button, unless using a Menu chord.</li>
+        <li>Long-press Quest <strong>Menu</strong>: exit the stream and return to the connections page.</li>
+        <li><strong>Menu + X</strong>: Share; <strong>Menu + Y</strong>: PlayStation button; <strong>Menu + left-stick click</strong>: touchpad click.</li>
+    </ul>
+    <p>Under <strong>Settings → Controls &amp; Input → Exit Stream Button</strong>, you can learn another Quest or Bluetooth-gamepad button to exit the stream. The Quest Menu long-press is reserved and cannot be changed; choose <strong>Clear assignment</strong> to remove a learned button.</p>
+
+    <h3>AI 2D-to-3D Depth</h3>
+    <p><strong>AI 2D-to-3D Depth (Experimental)</strong> uses Depth Anything V2 asynchronously to infer depth from the 2D game stream and render separate eye views. It requires Immersive VR Mode. Choose <strong>Comfort</strong>, <strong>Balanced</strong>, <strong>Enhanced</strong>, or <strong>Strong</strong> depth strength. Start with Comfort or Balanced; stronger settings can make the depth more obvious but may introduce artifacts or use more battery.</p>
+    <p><strong>Note:</strong> Immersive mode, Touch controller emulation, and AI depth are experimental. If a game has input, visual, or battery-life problems, disable these options and use a Bluetooth controller with the flat stream.</p>
 
     <h2>Support &amp; Community</h2>
     <p>If you need help setting up Horizon Stream, run into bugs, or want to chat with the community, join our official Discord server!</p>

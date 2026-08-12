@@ -39,7 +39,7 @@ option(CHIAKI_LIB_JSONC_EXTERNAL_PROJECT "Build json-c from source via FetchCont
 option(CHIAKI_LIB_MINIUPNPC_EXTERNAL_PROJECT "Build miniupnpc from source via FetchContent" OFF)
 
 set(CHIAKI_VERSION_MAJOR 1)
-set(CHIAKI_VERSION_MINOR 0)
+set(CHIAKI_VERSION_MINOR 1)
 set(CHIAKI_VERSION_PATCH 0)
 set(CHIAKI_VERSION ${CHIAKI_VERSION_MAJOR}.${CHIAKI_VERSION_MINOR}.${CHIAKI_VERSION_PATCH})
 
@@ -54,6 +54,10 @@ set(CPACK_DEBIAN_PACKAGE_SECTION "games")
 include(CPack)
 
 set(CHIAKI_IS_SWITCH ${NSWITCH})
+
+if(ANDROID)
+    add_link_options("-Wl,-z,max-page-size=16384")
+endif()
 
 if(APPLE)
 	if(CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "arm64")
