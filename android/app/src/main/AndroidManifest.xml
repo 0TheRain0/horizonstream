@@ -15,9 +15,14 @@
     <uses-feature
         android:name="oculus.software.handtracking"
         android:required="false" />
+    <!-- Meta's native Passthrough Camera API is available only on Quest 3/3S
+         and requires a Camera2 implementation. -->
     <uses-feature
-        android:name="android.hardware.camera.any"
-        android:required="false" />
+        android:name="android.hardware.camera2.any"
+        android:required="true" />
+    <uses-feature
+        android:name="com.oculus.feature.PASSTHROUGH"
+        android:required="true" />
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -41,7 +46,7 @@
         <!-- Meta Quest Hardware & Horizon OS Compatibility -->
         <meta-data
             android:name="com.oculus.supportedDevices"
-            android:value="quest2|questpro|quest3|quest3s" />
+            android:value="quest3|quest3s" />
         <meta-data
             android:name="com.oculus.handtracking.frequency"
             android:value="LOW" />

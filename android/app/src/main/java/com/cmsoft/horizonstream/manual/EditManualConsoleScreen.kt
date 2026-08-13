@@ -54,7 +54,9 @@ fun EditManualConsoleScreen(
     val context = LocalContext.current
     val database = remember { getDatabase(context) }
 
-    var consoleName by remember { mutableStateOf("") }
+    var consoleName by remember {
+        mutableStateOf(if ((manualHostId ?: 0L) == 0L) "Playstation" else "")
+    }
     var hostAddress by remember { mutableStateOf(prefilledHost ?: "") }
     var psnId by remember { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }

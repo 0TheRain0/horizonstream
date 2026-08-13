@@ -91,7 +91,7 @@ class DisplayHostRecyclerViewAdapter(
 			it.root.setOnClickListener { clickCallback(host) }
 
 			val canWakeup = host.registeredHost != null
-			val canEditDelete = host is ManualDisplayHost
+			val canEditDelete = host is ManualDisplayHost && !host.isRegistered
 			if(canWakeup || canEditDelete)
 			{
 				it.menuButton.isVisible = true

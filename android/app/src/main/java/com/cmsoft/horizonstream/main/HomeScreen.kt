@@ -326,8 +326,14 @@ fun HostItem(
             }
             if (host is ManualDisplayHost) {
                 Row {
-                    IconButton(onClick = onEdit) {
-                        Icon(Icons.Default.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.primary)
+                    // Once registration has completed, the row represents the
+                    // console's discovered/registered identity. Keep delete
+                    // available, but don't expose the incomplete manual-host
+                    // editor for that registered device.
+                    if (!host.isRegistered) {
+                        IconButton(onClick = onEdit) {
+                            Icon(Icons.Default.Edit, contentDescription = "Edit", tint = MaterialTheme.colorScheme.primary)
+                        }
                     }
                     IconButton(onClick = onDelete) {
                         Icon(Icons.Default.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error)

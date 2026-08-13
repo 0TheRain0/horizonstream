@@ -3,15 +3,18 @@ package com.cmsoft.horizonstream.manual
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.PackageManager
+import android.hardware.camera2.CameraCharacteristics
 import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +22,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -50,6 +55,13 @@ import java.util.concurrent.atomic.AtomicBoolean
 private const val QR_TRANSFER_PREFIX = "HORIZONSTREAM:ACCOUNT_ID:"
 private const val QR_REDIRECT_TRANSFER_PREFIX = "HORIZONSTREAM:PSN_REDIRECT:"
 private const val HEADSET_CAMERA_PERMISSION = "horizonos.permission.HEADSET_CAMERA"
+private const val META_CAMERA_SOURCE_KEY = "com.meta.extra_metadata.camera_source"
+private const val META_CAMERA_SOURCE_PASSTHROUGH = 0
+
+private val passthroughCameraSourceKey = CameraCharacteristics.Key(
+    META_CAMERA_SOURCE_KEY,
+    Int::class.javaObjectType
+)
 
 internal sealed interface PsnQrTransfer {
     data class AccountId(val value: String) : PsnQrTransfer
@@ -63,16 +75,16 @@ internal fun AccountIdQrScanner(
 ) {
     val context = LocalContext.current
     var hasCameraPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(context, HEADSET_CAMERA_PERMISSION) == PackageManager.PERMISSION_GRANTED
-        )
+        mutableStateOf(context.hasPassthroughCameraPermission())
     }
     var cameraError by remember { mutableStateOf<String?>(null) }
     val permissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        hasCameraPermission = granted
-        if (!granted) cameraError = "Passthrough camera access is required to scan the QR code."
+        hasCameraPermission = granted && context.hasPassthroughCameraPermission()
+        if (!hasCameraPermission) {
+            cameraError = "Passthrough camera access is required to scan the QR code."
+        }
     }
 
     LaunchedEffect(Unit) {
@@ -92,7 +104,7 @@ internal fun AccountIdQrScanner(
         ) {
             Text("Scan PSN sign-in QR code", style = MaterialTheme.typography.headlineSmall)
             Text(
-                "Look at the QR code displayed by the Horizon Stream Chrome extension on your computer. Horizon Stream will finish the Account-ID lookup after scanning it.",
+                "Look directly at the QR code displayed by the Horizon Stream Chrome extension. The headset camera moves with your head, so keep the code inside the center frame.",
                 style = MaterialTheme.typography.bodyMedium
             )
             if (hasCameraPermission) {
@@ -107,8 +119,24 @@ internal fun AccountIdQrScanner(
                         onTransferScanned = onTransferScanned,
                         onCameraError = { cameraError = it }
                     )
+                    Box(
+                        modifier = Modifier
+                            .size(220.dp)
+                            .border(
+                                width = 3.dp,
+                                color = Color.White,
+                                shape = RoundedCornerShape(20.dp)
+                            ),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .background(Color.White, RoundedCornerShape(50))
+                        )
+                    }
                     Text(
-                        "Center the QR code in view",
+                        "Move your head to aim the center frame",
                         color = Color.White,
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
@@ -147,6 +175,7 @@ private fun QrCameraPreview(
     val previewView = remember {
         PreviewView(context).apply {
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+            scaleType = PreviewView.ScaleType.FILL_CENTER
         }
     }
     val mainExecutor = remember { ContextCompat.getMainExecutor(context) }
@@ -207,11 +236,7 @@ private fun QrCameraPreview(
                             imageProxy.close()
                         }
                 }
-                val cameraSelector = when {
-                    provider?.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA) == true -> CameraSelector.DEFAULT_BACK_CAMERA
-                    provider?.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA) == true -> CameraSelector.DEFAULT_FRONT_CAMERA
-                    else -> throw IllegalStateException("No camera is available")
-                }
+                val cameraSelector = passthroughCameraSelector(provider)
                 provider?.unbindAll()
                 provider?.bindToLifecycle(
                     lifecycleOwner,
@@ -231,6 +256,25 @@ private fun QrCameraPreview(
         }
     }
 }
+
+private fun passthroughCameraSelector(provider: ProcessCameraProvider?): CameraSelector {
+    val selector = CameraSelector.Builder()
+        .addCameraFilter { cameraInfos ->
+            cameraInfos.filter { cameraInfo ->
+                runCatching {
+                    Camera2CameraInfo.from(cameraInfo)
+                        .getCameraCharacteristic(passthroughCameraSourceKey) == META_CAMERA_SOURCE_PASSTHROUGH
+                }.getOrDefault(false)
+            }
+        }
+        .build()
+
+    if (provider?.hasCamera(selector) == true) return selector
+    throw IllegalStateException("No Meta passthrough camera is available")
+}
+
+private fun Context.hasPassthroughCameraPermission(): Boolean =
+    ContextCompat.checkSelfPermission(this, HEADSET_CAMERA_PERMISSION) == PackageManager.PERMISSION_GRANTED
 
 internal fun decodeQrTransfer(value: String?): PsnQrTransfer? {
     val payload = value ?: return null
