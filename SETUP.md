@@ -6,8 +6,8 @@ To use Horizon Stream, you need to link it to your PlayStation 5 console using a
 Sony requires a specific 8-byte Account ID to register for Remote Play.
 Use the Chrome QR transfer before obtaining a console Link Device code:
 
-1. In the Horizon Stream Chrome extension, select **Open PS Remote Play sign-in** and complete Sony's normal sign-in in Chrome.
-2. Reopen the extension when it displays the sign-in QR code.
+1. In the Horizon Stream Chrome extension, select its toolbar icon to open the side panel, then select **Open PS Remote Play sign-in** and complete Sony's normal sign-in in Chrome.
+2. Keep the side panel open. It automatically displays the sign-in QR code when Sony reaches the final redirect.
 3. In Horizon Stream registration, select **Scan sign-in QR code** and look at that code through the headset. Horizon Stream completes the Account-ID lookup locally.
 
 The QR code contains a one-time PS Remote Play redirect URL, so scan it immediately and never share it. Alternatively, paste that complete redirect URL directly into Horizon Stream, or paste a Base64 Account ID obtained through another method.

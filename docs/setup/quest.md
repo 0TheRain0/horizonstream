@@ -26,9 +26,9 @@ Give the console a recognizable name and enter its local IP address. A discovere
 
 The recommended method is the **sign-in QR code**. It transfers a one-time redirect URL from Chrome to the headset; the extension does not exchange it with Sony.
 
-1. On a computer, open the Horizon Stream Chrome extension.
-2. Select **Open PS Remote Play sign-in** and complete Sony's normal sign-in in Chrome.
-3. When the sign-in tab reaches its final redirect, reopen the extension. It captures that redirect and displays a QR code.
+1. On a computer, select the Horizon Stream extension's toolbar icon to open its side panel.
+2. In the side panel, select **Open PS Remote Play sign-in** and complete Sony's normal sign-in in Chrome.
+3. Keep the side panel open. When the sign-in tab reaches its final redirect, it captures the redirect and replaces the instructions with a QR code and copyable URL.
 4. In Horizon Stream, select **Scan sign-in QR code**. Allow passthrough-camera access when prompted and look at the QR code.
 5. Horizon Stream validates the redirect and retrieves the Base64 Account ID locally.
 
