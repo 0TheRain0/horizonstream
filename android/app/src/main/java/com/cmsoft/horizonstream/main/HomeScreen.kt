@@ -69,9 +69,15 @@ fun HomeScreen(
             StreamActivity::class.java
         }
         // Keep the immersive activity explicit. It requires ConnectInfo and is
-        // not an app-entry activity, so it must never be resolved as MAIN/VR.
+        // launched as a separate Quest VR task. Without ACTION_MAIN and
+        // FLAG_ACTIVITY_NEW_TASK, Horizon OS keeps it inside the 2D panel task;
+        // OpenXR then remains VISIBLE but never FOCUSED and xrWaitFrame stalls.
         val intent = Intent(context, targetActivityClass).apply {
             putExtra(StreamActivity.EXTRA_CONNECT_INFO, connectInfo)
+            if(targetActivityClass == com.cmsoft.horizonstream.stream.VRStreamActivity::class.java) {
+                action = Intent.ACTION_MAIN
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
         }
         context.startActivity(intent)
     }

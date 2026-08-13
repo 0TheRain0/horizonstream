@@ -135,19 +135,18 @@ class VRStreamActivity : StreamActivity(), SurfaceHolder.Callback {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        Log.i(TAG, "VRStreamActivity created; OpenXR will initialize after the activity resumes.")
+        Log.i(TAG, "VRStreamActivity created; OpenXR will initialize after resume and before stream startup.")
     }
 
     /**
-     * Quest only grants an immersive OpenXR session to a resumed activity. Initializing in
-     * onCreate() can race the Horizon OS panel-to-immersive transition and leave the stream
-     * running as a flat Android panel. The StreamSession tolerates receiving its decoder
-     * surface after it has started, so initializing here keeps the lifecycle ordering safe.
+     * Quest grants an immersive OpenXR session only after the activity is resumed. This
+     * hook is dispatched by StreamActivity after super.onResume(), but before it starts
+     * Chiaki, so MediaCodec is configured with the OpenXR SurfaceTexture from frame one.
      */
-    private fun initializeVrAfterResume() {
+    override fun prepareStreamOnResume() {
         if (vrInitializationAttempted || isFinishing || isDestroyed) return
         vrInitializationAttempted = true
-        Log.i(TAG, "VRStreamActivity resumed; initializing OpenXR 3D VR Engine.")
+        Log.i(TAG, "Preparing OpenXR decoder surface before starting the stream.")
 
         try {
             val profile = viewModel.session.connectInfo.videoProfile
@@ -866,7 +865,6 @@ class VRStreamActivity : StreamActivity(), SurfaceHolder.Callback {
         questMenuReleasedSinceResume = false
         questMenuArmAfterUptimeMs = SystemClock.uptimeMillis() + 1500L
         super.onResume()
-        initializeVrAfterResume()
         acceptQuestControllerInput = true
         if (isVRInitialized) {
             Log.i(TAG, "VRStreamActivity onResume - Resuming OpenXR 3D VR Render Loop.")

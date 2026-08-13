@@ -4,6 +4,7 @@ package com.cmsoft.horizonstream.stream
 
 import android.animation.Animator
 import android.animation.AnimatorListenerAdapter
+import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.graphics.Matrix
 import android.os.*
@@ -27,6 +28,7 @@ import com.cmsoft.horizonstream.common.ext.viewModelFactory
 import com.cmsoft.horizonstream.databinding.ActivityStreamBinding
 import com.cmsoft.horizonstream.lib.ConnectInfo
 import com.cmsoft.horizonstream.lib.ConnectVideoProfile
+import com.cmsoft.horizonstream.main.MainActivity
 import com.cmsoft.horizonstream.session.*
 import com.cmsoft.horizonstream.touchcontrols.DefaultTouchControlsFragment
 import com.cmsoft.horizonstream.touchcontrols.TouchControlsFragment
@@ -72,6 +74,16 @@ open class StreamActivity : AppCompatActivity(), View.OnSystemUiVisibilityChange
 		val connectInfo = intent.getParcelableExtra<ConnectInfo>(EXTRA_CONNECT_INFO)
 		if(connectInfo == null)
 		{
+			// Meta and Horizon OS may resolve the exported VR entry directly. It
+			// cannot stream without a selected console, so return to the app's 2D
+			// connection panel instead of presenting an empty immersive activity.
+			if(this is VRStreamActivity) {
+				startActivity(Intent(this, MainActivity::class.java).apply {
+					action = Intent.ACTION_MAIN
+					addCategory("com.oculus.intent.category.2D")
+					addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+				})
+			}
 			finish()
 			return
 		}
@@ -161,8 +173,15 @@ open class StreamActivity : AppCompatActivity(), View.OnSystemUiVisibilityChange
 	{
 		super.onResume()
 		hideSystemUI()
+		prepareStreamOnResume()
 		viewModel.session.resume()
 	}
+
+	/**
+	 * Allows specialized stream activities to prepare their decoder target after
+	 * Android has resumed the activity but before the Chiaki session starts.
+	 */
+	protected open fun prepareStreamOnResume() = Unit
 
 	override fun onPause()
 	{

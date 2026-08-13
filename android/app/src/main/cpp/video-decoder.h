@@ -20,6 +20,7 @@ typedef struct android_chiaki_video_decoder_t
 	uint64_t timestamp_cur;
 	ChiakiThread output_thread;
 	bool shutdown_output;
+	bool rendered_first_output;
 	int32_t target_width;
 	int32_t target_height;
 	ChiakiCodec target_codec;

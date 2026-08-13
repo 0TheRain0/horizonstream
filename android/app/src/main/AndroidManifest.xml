@@ -10,7 +10,8 @@
         android:required="false" />
     <uses-feature
         android:name="android.hardware.vr.headtracking"
-        android:required="false" />
+        android:version="1"
+        android:required="true" />
     <uses-feature
         android:name="oculus.software.handtracking"
         android:required="false" />
@@ -67,6 +68,8 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="com.oculus.intent.category.2D" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
@@ -81,17 +84,18 @@
         <activity
             android:name=".stream.VRStreamActivity"
             android:theme="@style/VRStreamTheme"
-            android:exported="false"
+            android:exported="true"
             android:launchMode="singleTask"
             android:screenOrientation="landscape"
             android:hardwareAccelerated="true"
             android:resizeableActivity="false"
             android:configChanges="density|fontScale|keyboard|keyboardHidden|layoutDirection|locale|mcc|mnc|navigation|orientation|screenLayout|screenSize|smallestScreenSize|touchscreen|uiMode">
-            <!-- This activity is launched only from HomeScreen with a required
-                 ConnectInfo payload. It must not be exported as a second VR
-                 launcher: store validation can resolve and launch it without
-                 that payload, which causes it to finish immediately. -->
             <meta-data android:name="com.oculus.vr.focusaware" android:value="true" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="com.oculus.intent.category.VR" />
+            </intent-filter>
         </activity>
 
     </application>

@@ -65,6 +65,10 @@ static bool g_xrInitialized = false;
 static bool g_xrSessionRunning = false;
 static bool g_xrSessionBegun = false;
 static bool g_renderThreadStarted = false;
+static bool g_loggedFirstCompositedFrame = false;
+static bool g_loggedFirstRenderAttempt = false;
+static bool g_loggedRenderPrerequisiteFailure = false;
+static bool g_loggedSurfaceTextureFailure = false;
 static int32_t g_streamWidth = 1280;
 static int32_t g_streamHeight = 720;
 static bool g_stereoConversionEnabled = false;
@@ -479,6 +483,23 @@ static bool initStereoProgram() {
     glBindBuffer(GL_ARRAY_BUFFER, g_stereoVertexBuffer);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
+    // The video shader always has a sampler bound for the depth map. Binding
+    // texture 0 while 2D-to-3D is disabled leaves that sampler incomplete on
+    // Quest's GLES driver and may invalidate the entire draw, producing a black
+    // quad. Keep a complete 1x1 neutral map for the flat immersive path.
+    const uint8_t neutralDepth = 128;
+    glGenTextures(1, &g_depthTexture);
+    glBindTexture(GL_TEXTURE_2D, g_depthTexture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(
+        GL_TEXTURE_2D, 0, GL_R8, 1, 1, 0,
+        GL_RED, GL_UNSIGNED_BYTE, &neutralDepth);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
     if (g_stereoConversionEnabled) {
         static const char* depthCaptureFragmentShaderSource =
             "#extension GL_OES_EGL_image_external : require\n"
@@ -540,7 +561,6 @@ static bool initStereoProgram() {
         }
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-        glGenTextures(1, &g_depthTexture);
         glBindTexture(GL_TEXTURE_2D, g_depthTexture);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -856,12 +876,32 @@ static bool createStereoSwapchain() {
 }
 
 static bool renderStereoFrame(JNIEnv* env) {
+    if (!g_loggedFirstRenderAttempt) {
+        g_loggedFirstRenderAttempt = true;
+        LOGI("First OpenXR video render attempt.");
+    }
     if (!g_surfaceTextureObject || !g_updateTexImageMethod ||
-        g_stereoSwapchainImages.empty())
+        !g_getTransformMatrixMethod || g_stereoSwapchainImages.empty()) {
+        if (!g_loggedRenderPrerequisiteFailure) {
+            g_loggedRenderPrerequisiteFailure = true;
+            LOGE("Video render prerequisites missing: surfaceTexture=%d update=%d "
+                 "transform=%d swapchainImages=%zu.",
+                 g_surfaceTextureObject != NULL,
+                 g_updateTexImageMethod != NULL,
+                 g_getTransformMatrixMethod != NULL,
+                 g_stereoSwapchainImages.size());
+        }
         return false;
+    }
 
     env->CallVoidMethod(g_surfaceTextureObject, g_updateTexImageMethod);
     if (env->ExceptionCheck()) {
+        if (!g_loggedSurfaceTextureFailure) {
+            g_loggedSurfaceTextureFailure = true;
+            LOGE("SurfaceTexture.updateTexImage() threw; decoded frames cannot "
+                 "reach the OpenXR texture.");
+            env->ExceptionDescribe();
+        }
         env->ExceptionClear();
         return false;
     }
@@ -869,6 +909,13 @@ static bool renderStereoFrame(JNIEnv* env) {
     jfloatArray transformArray = env->NewFloatArray(16);
     env->CallVoidMethod(
         g_surfaceTextureObject, g_getTransformMatrixMethod, transformArray);
+    if (env->ExceptionCheck()) {
+        LOGE("SurfaceTexture.getTransformMatrix() threw.");
+        env->ExceptionDescribe();
+        env->ExceptionClear();
+        env->DeleteLocalRef(transformArray);
+        return false;
+    }
     float transform[16];
     env->GetFloatArrayRegion(transformArray, 0, 16, transform);
     env->DeleteLocalRef(transformArray);
@@ -900,15 +947,23 @@ static bool renderStereoFrame(JNIEnv* env) {
         XrSwapchainImageAcquireInfo acquireInfo = {
             XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO
         };
-        if (XR_FAILED(g_pfnAcquireSwapchainImage(
-                swapchain, &acquireInfo, &imageIndex)))
+        XrResult acquireResult = g_pfnAcquireSwapchainImage(
+                swapchain, &acquireInfo, &imageIndex);
+        if (XR_FAILED(acquireResult)) {
+            LOGE("%s-eye xrAcquireSwapchainImage failed: %d.",
+                 eyeName, acquireResult);
             return false;
+        }
         XrSwapchainImageWaitInfo waitInfo = {
             XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO
         };
         waitInfo.timeout = XR_INFINITE_DURATION;
-        if (XR_FAILED(g_pfnWaitSwapchainImage(swapchain, &waitInfo)))
+        XrResult waitResult = g_pfnWaitSwapchainImage(swapchain, &waitInfo);
+        if (XR_FAILED(waitResult)) {
+            LOGE("%s-eye xrWaitSwapchainImage failed: %d.",
+                 eyeName, waitResult);
             return false;
+        }
 
         glBindFramebuffer(GL_FRAMEBUFFER, g_stereoFramebuffer);
         glFramebufferTexture2D(
@@ -954,7 +1009,20 @@ static bool renderStereoFrame(JNIEnv* env) {
             (void*)(2 * sizeof(GLfloat)));
         glEnableVertexAttribArray(g_textureCoordLocation);
         glUniform1f(g_eyeSignLocation, eyeSign);
+        // Discard a bounded number of stale errors so a lost context cannot
+        // trap the render thread in an error-clearing loop.
+        for (int i = 0; i < 8 && glGetError() != GL_NO_ERROR; ++i) { }
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+        GLenum drawError = glGetError();
+        if (drawError != GL_NO_ERROR) {
+            LOGE("%s-eye video draw failed with GLES error 0x%x.",
+                 eyeName, drawError);
+            XrSwapchainImageReleaseInfo releaseInfo = {
+                XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO
+            };
+            g_pfnReleaseSwapchainImage(swapchain, &releaseInfo);
+            return false;
+        }
         renderSettingsOverlay();
         glFinish();
 
@@ -973,12 +1041,18 @@ static bool renderStereoFrame(JNIEnv* env) {
             g_stereoConversionEnabled ? -1.0f : 0.0f,
             "Left"))
         return false;
-    return !g_stereoConversionEnabled ||
-           renderEye(
-               g_rightEyeSwapchain,
-               g_rightEyeSwapchainImages,
-               1.0f,
-               "Right");
+    if (g_stereoConversionEnabled &&
+        !renderEye(
+            g_rightEyeSwapchain,
+            g_rightEyeSwapchainImages,
+            1.0f,
+            "Right"))
+        return false;
+    if (!g_loggedFirstCompositedFrame) {
+        g_loggedFirstCompositedFrame = true;
+        LOGI("First video frame copied into the OpenXR swapchain.");
+    }
+    return true;
 }
 
 static void* openxrRenderLoopThread(void* arg) {
@@ -1322,6 +1396,10 @@ JNIEXPORT jobject JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_
     LOGI("Native OpenXR Session created! Waiting for READY event to begin.");
     g_sessionState = XR_SESSION_STATE_UNKNOWN;
     g_xrSessionBegun = false;
+    g_loggedFirstCompositedFrame = false;
+    g_loggedFirstRenderAttempt = false;
+    g_loggedRenderPrerequisiteFailure = false;
+    g_loggedSurfaceTextureFailure = false;
     g_xrInitialized = true;
     // The render thread owns this context after initialization.
     eglMakeCurrent(g_eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
@@ -1536,6 +1614,10 @@ JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nat
     g_eglSurface = EGL_NO_SURFACE;
     g_eglContext = EGL_NO_CONTEXT;
     g_eglDisplay = EGL_NO_DISPLAY;
+    g_loggedFirstCompositedFrame = false;
+    g_loggedFirstRenderAttempt = false;
+    g_loggedRenderPrerequisiteFailure = false;
+    g_loggedSurfaceTextureFailure = false;
     g_xrInitialized = false;
 }
 

@@ -61,10 +61,14 @@ class StreamSession(val connectInfo: ConnectInfo, val logManager: LogManager, va
 			val session = Session(connectInfo, logManager.createNewFile().file.absolutePath, logVerbose)
 			_state.value = StreamStateConnecting
 			session.eventCallback = this::eventCallback
-			session.start()
 			val surface = surface
 			if(surface != null)
 				session.setSurface(surface)
+			// MediaCodec must have its final output Surface before the remote-play
+			// session can deliver the first video access unit. In immersive mode the
+			// Surface belongs to OpenXR, so starting first creates a race where the
+			// decoder rejects the initial frames and can remain permanently black.
+			session.start()
 			this.session = session
 		}
 		catch(e: CreateError)

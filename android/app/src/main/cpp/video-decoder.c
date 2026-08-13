@@ -23,6 +23,7 @@ ChiakiErrorCode android_chiaki_video_decoder_init(AndroidChiakiVideoDecoder *dec
 	decoder->target_height = target_height;
 	decoder->target_codec = codec;
 	decoder->shutdown_output = false;
+	decoder->rendered_first_output = false;
 	return chiaki_mutex_init(&decoder->codec_mutex, false);
 }
 
@@ -65,9 +66,15 @@ void android_chiaki_video_decoder_set_surface(AndroidChiakiVideoDecoder *decoder
 	{
 		if(decoder->codec)
 		{
+			// kill_decoder() owns codec_mutex while it stops the codec and joins
+			// the output thread. Release our setter lock first to avoid recursively
+			// locking the non-recursive mutex during activity/surface teardown.
+			chiaki_mutex_unlock(&decoder->codec_mutex);
 			kill_decoder(decoder);
 			CHIAKI_LOGI(decoder->log, "Decoder shut down after surface was removed");
+			return;
 		}
+		chiaki_mutex_unlock(&decoder->codec_mutex);
 		return;
 	}
 
@@ -200,7 +207,25 @@ static void *android_chiaki_video_decoder_output_thread_func(void *user)
 		ssize_t status = AMediaCodec_dequeueOutputBuffer(decoder->codec, &info, -1);
 		if(status >= 0)
 		{
-			AMediaCodec_releaseOutputBuffer(decoder->codec, (size_t)status, info.size != 0);
+			// This decoder is always configured with an output Surface. Surface
+			// output buffers commonly report size == 0 (the pixels live in the
+			// GraphicBuffer), but they still must be released with render=true.
+			// Quest otherwise decodes the stream and drops every frame before it
+			// reaches the SurfaceTexture/OpenXR compositor.
+			media_status_t release_status = AMediaCodec_releaseOutputBuffer(
+				decoder->codec, (size_t)status, true);
+			if(release_status != AMEDIA_OK)
+			{
+				CHIAKI_LOGE(decoder->log,
+					"Failed to render decoder output buffer: %d",
+					(int)release_status);
+			}
+			else if(!decoder->rendered_first_output)
+			{
+				decoder->rendered_first_output = true;
+				CHIAKI_LOGI(decoder->log,
+					"First decoded video buffer released to the output Surface");
+			}
 			if(info.flags & AMEDIACODEC_BUFFER_FLAG_END_OF_STREAM)
 			{
 				CHIAKI_LOGI(decoder->log, "AMediaCodec reported EOS");
