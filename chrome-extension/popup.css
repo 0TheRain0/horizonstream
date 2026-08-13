@@ -6,6 +6,7 @@
 body {
   margin: 0;
   min-width: 360px;
+  min-height: 100%;
   background: #101827;
   color: #f8fafc;
 }
@@ -170,7 +171,8 @@ input[readonly] {
 }
 
 .scan-instructions,
-.expires {
+.expires,
+.other-client {
   font-size: 13px;
   color: #cbd5e1;
 }
@@ -187,4 +189,12 @@ input[readonly] {
   display: block;
   width: 100%;
   height: auto;
+}
+
+#captured-url {
+  margin-top: 6px;
+}
+
+.other-client {
+  margin: 0 0 16px;
 }

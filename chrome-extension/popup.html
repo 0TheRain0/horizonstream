@@ -3,44 +3,51 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Horizon Stream PSN Account ID</title>
+    <title>Horizon Stream PSN Authenticator</title>
     <link rel="stylesheet" href="popup.css">
   </head>
   <body>
     <main>
-      <h1>Horizon Stream transfer</h1>
-      <p class="intro">Use these three steps to move a PSN Account ID from Chrome to Horizon Stream on Quest.</p>
+      <section id="setup">
+        <h1>Horizon Stream PSN Authenticator</h1>
+        <p class="intro">Keep this panel open while you sign in. It captures the PS Remote Play redirect and immediately presents a Horizon Stream QR code and copyable URL.</p>
 
-      <section class="step">
-        <div class="step-heading"><span>1</span><h2>Sign in to PSN</h2></div>
-        <p>Open Sony’s PS Remote Play sign-in in Chrome and complete Sony’s normal sign-in. The extension will capture the final redirect automatically.</p>
-        <button id="open-psn" class="primary" type="button">Open PS Remote Play sign-in</button>
+        <section class="step">
+          <div class="step-heading"><span>1</span><h2>Sign in to PSN</h2></div>
+          <p>Open Sony’s PS Remote Play sign-in in a new Chrome tab and complete Sony’s normal sign-in there.</p>
+          <button id="open-psn" class="primary" type="button">Open PS Remote Play sign-in</button>
+        </section>
+
+        <section class="step">
+          <div class="step-heading"><span>2</span><h2>Wait for automatic capture</h2></div>
+          <p>Keep this side panel visible while you complete sign-in. When Sony reaches the final redirect, this screen is replaced automatically—no copying or pasting needed.</p>
+          <details>
+            <summary>Manual fallback if capture did not appear</summary>
+            <p>Copy the complete final redirect URL from the sign-in tab, paste it below, then create the QR code. The URL is one-time-use and must not be shared.</p>
+            <label for="redirect-url">PS Remote Play redirect URL</label>
+            <textarea id="redirect-url" rows="4" autocomplete="off" spellcheck="false" placeholder="https://remoteplay.dl.playstation.net/remoteplay/redirect?code=…"></textarea>
+            <button id="show-qr" class="secondary full-width" type="button">Create QR code from pasted URL</button>
+          </details>
+        </section>
+
+        <p id="status" class="status" aria-live="polite"></p>
+        <p class="privacy">This helper opens Sony’s normal sign-in in Chrome. It does not read cookies, page content, passwords, or unrelated browsing. It watches only the final redirect in the tab it opened, then puts that one-time URL into the QR code.</p>
       </section>
-
-      <section class="step">
-        <div class="step-heading"><span>2</span><h2>Paste the redirect URL</h2></div>
-        <p>Return here after sign-in to create the QR code automatically. If capture did not work, copy the complete final redirect URL from the address bar and paste it here. Do this immediately; the code can be used only once. Never share the URL.</p>
-        <label for="redirect-url">PS Remote Play redirect URL</label>
-        <textarea id="redirect-url" rows="4" autocomplete="off" spellcheck="false" placeholder="https://remoteplay.dl.playstation.net/remoteplay/redirect?code=…"></textarea>
-      </section>
-
-      <section class="step">
-        <div class="step-heading"><span>3</span><h2>Create the QR code</h2></div>
-        <p>Create the transfer code, then scan it from Horizon Stream’s registration screen on your Quest. Horizon Stream completes the sign-in there.</p>
-        <button id="show-qr" class="primary" type="button">Create sign-in QR code</button>
-      </section>
-
-      <p id="status" class="status" aria-live="polite"></p>
 
       <section id="result" hidden>
-        <p class="scan-instructions">In Horizon Stream, choose <strong>Scan QR code</strong>, then look at this code through the headset. Scan it immediately.</p>
+        <h1>Horizon Stream sign-in ready</h1>
+        <p class="scan-instructions">In Horizon Stream, choose <strong>Scan sign-in QR code</strong>, then look at this QR code through the headset. Scan it immediately.</p>
         <div id="qr-code" class="qr-code" aria-live="polite"></div>
-        <p class="expires">The code contains the one-time PSN redirect URL. It is never uploaded or stored by this extension, but anyone who scans it can attempt to finish this sign-in.</p>
+        <p class="expires">This Horizon Stream transfer QR contains the one-time PSN redirect URL, so do not show it to anyone else.</p>
 
-        <button id="clear" class="secondary" type="button">Clear QR code</button>
+        <label for="captured-url">Complete PS Remote Play redirect URL</label>
+        <textarea id="captured-url" rows="5" readonly spellcheck="false"></textarea>
+        <button id="copy-url" class="secondary full-width" type="button">Copy redirect URL</button>
+        <p class="other-client">Use the complete URL above with any PS Remote Play client that accepts a sign-in redirect URL. The QR code is the HorizonStream-specific convenience format; the URL itself is provided for copy/paste into other clients.</p>
+
+        <button id="clear" class="secondary full-width" type="button">Start another PSN sign-in</button>
+        <p id="result-status" class="status" aria-live="polite"></p>
       </section>
-
-      <p class="privacy">This extension opens Sony’s normal sign-in in Chrome. It does not read cookies, page content, passwords, or unrelated browsing. It watches only the final redirect in the sign-in tab it opened, then puts that one-time URL into the QR code. Horizon Stream on your Quest completes the request.</p>
     </main>
     <script src="vendor/qrcode.js"></script>
     <script type="module" src="popup.js"></script>

@@ -3,6 +3,20 @@ import { parseLegacyRedirectUrl } from "./account-id.mjs";
 const LOGIN_TAB_KEY = "psnLoginTabId";
 const REDIRECT_URL_KEY = "psnLoginRedirectUrl";
 
+function configureSidePanel() {
+  return chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+}
+
+chrome.runtime.onInstalled.addListener(() => {
+  void configureSidePanel();
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  void configureSidePanel();
+});
+
+void configureSidePanel();
+
 chrome.webNavigation.onCommitted.addListener(async (details) => {
   if (details.frameId !== 0) return;
 

@@ -3,8 +3,12 @@ import { parseLegacyRedirectUrl } from "./account-id.mjs";
 const openPsnButton = document.getElementById("open-psn");
 const showQrButton = document.getElementById("show-qr");
 const clearButton = document.getElementById("clear");
+const copyUrlButton = document.getElementById("copy-url");
 const statusElement = document.getElementById("status");
+const resultStatusElement = document.getElementById("result-status");
 const redirectUrlInput = document.getElementById("redirect-url");
+const capturedUrlInput = document.getElementById("captured-url");
+const setupSection = document.getElementById("setup");
 const resultSection = document.getElementById("result");
 const qrCodeElement = document.getElementById("qr-code");
 const LOGIN_TAB_KEY = "psnLoginTabId";
@@ -13,15 +17,21 @@ const REDIRECT_URL_KEY = "psnLoginRedirectUrl";
 openPsnButton.addEventListener("click", openPsnRemotePlaySignIn);
 showQrButton.addEventListener("click", showQrCode);
 clearButton.addEventListener("click", clearQrCode);
+copyUrlButton.addEventListener("click", copyCapturedRedirectUrl);
 redirectUrlInput.addEventListener("input", () => clearQrCode(true));
 
 void restoreCapturedRedirect();
 
 async function openPsnRemotePlaySignIn() {
   await chrome.storage.session.remove([LOGIN_TAB_KEY, REDIRECT_URL_KEY]);
-  const tab = await chrome.tabs.create({ url: createPsnAuthorizeUrl() });
+  resetToSetup();
+  const tab = await chrome.tabs.create({
+    url: createPsnAuthorizeUrl(),
+    active: false
+  });
   await chrome.storage.session.set({ [LOGIN_TAB_KEY]: tab.id });
-  window.close();
+  await chrome.tabs.update(tab.id, { active: true });
+  showStatus("Sign-in tab opened. Keep this panel visible; the Horizon Stream QR code will appear here after sign-in.");
 }
 
 function showQrCode() {
@@ -29,7 +39,7 @@ function showQrCode() {
     const redirectUrl = redirectUrlInput.value.trim();
     parseLegacyRedirectUrl(redirectUrl);
     renderQrCode(redirectUrl);
-    showStatus("Sign-in QR code ready. Scan it in Horizon Stream immediately.");
+    showStatus("Horizon Stream sign-in QR code ready. Scan it immediately.", false, true);
   } catch (error) {
     resultSection.hidden = true;
     showStatus(error.message || "Paste a valid PS Remote Play redirect URL.", true);
@@ -37,15 +47,28 @@ function showQrCode() {
 }
 
 function clearQrCode(keepInput = false) {
-  resultSection.hidden = true;
-  qrCodeElement.replaceChildren();
-  if (!keepInput && redirectUrlInput.value) showStatus("");
+  resetToSetup(keepInput);
   void chrome.storage.session.remove(REDIRECT_URL_KEY);
 }
 
-function showStatus(message, isError = false) {
-  statusElement.textContent = message;
-  statusElement.classList.toggle("error", isError);
+function resetToSetup(keepInput = false) {
+  setupSection.hidden = false;
+  resultSection.hidden = true;
+  qrCodeElement.replaceChildren();
+  capturedUrlInput.value = "";
+  resultStatusElement.textContent = "";
+  resultStatusElement.classList.remove("error");
+  if (!keepInput) {
+    redirectUrlInput.value = "";
+    showStatus("");
+  }
+  setupSection.scrollIntoView({ block: "start", behavior: "smooth" });
+}
+
+function showStatus(message, isError = false, result = false) {
+  const element = result ? resultStatusElement : statusElement;
+  element.textContent = message;
+  element.classList.toggle("error", isError);
 }
 
 function createPsnAuthorizeUrl() {
@@ -74,11 +97,25 @@ async function restoreCapturedRedirect() {
     parseLegacyRedirectUrl(redirectUrl);
     redirectUrlInput.value = redirectUrl;
     renderQrCode(redirectUrl);
-    showStatus("Sign-in redirect captured. QR code ready to scan in Horizon Stream.");
+    showStatus("Sign-in redirect captured. Horizon Stream QR code ready to scan.", false, true);
   } catch {
     await chrome.storage.session.remove(REDIRECT_URL_KEY);
   }
 }
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "session") return;
+  const redirectUrl = changes[REDIRECT_URL_KEY]?.newValue;
+  if (typeof redirectUrl !== "string") return;
+  try {
+    parseLegacyRedirectUrl(redirectUrl);
+    redirectUrlInput.value = redirectUrl;
+    renderQrCode(redirectUrl);
+    showStatus("Sign-in redirect captured. Horizon Stream QR code ready to scan.", false, true);
+  } catch {
+    showStatus("A captured sign-in redirect was invalid. Start the sign-in again.", true);
+  }
+});
 
 function renderQrCode(redirectUrl) {
   const qr = qrcode(0, "M");
@@ -91,5 +128,21 @@ function renderQrCode(redirectUrl) {
     title: "Horizon Stream PSN sign-in transfer code",
     alt: "Scan this QR code in Horizon Stream on Quest"
   });
+  capturedUrlInput.value = redirectUrl;
+  setupSection.hidden = true;
   resultSection.hidden = false;
+  resultSection.scrollIntoView({ block: "start", behavior: "smooth" });
+}
+
+async function copyCapturedRedirectUrl() {
+  const redirectUrl = capturedUrlInput.value;
+  if (!redirectUrl) return;
+  try {
+    await navigator.clipboard.writeText(redirectUrl);
+    showStatus("Redirect URL copied. Treat it like a password.", false, true);
+  } catch {
+    capturedUrlInput.focus();
+    capturedUrlInput.select();
+    showStatus("Select and copy the redirect URL manually.", false, true);
+  }
 }

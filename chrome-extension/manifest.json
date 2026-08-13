@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
-  "name": "Horizon Stream PSN Account ID",
-  "description": "Transfer a one-time PS Remote Play sign-in redirect to Horizon Stream with a QR code.",
-  "version": "0.6.1",
-  "key": "MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAwoegvZxnstBTKPPe0viQQEUgNDvpjH+IpPUmx4XIsIVhMZ32V54EHkuLg3OjUPnbF4vHgBn4YbpMPcqaXCEP/QrBhMBoCIhLZ1WdUec39wUu3Jf7FXL3lTVLOvaM7N5uIgyoayn+wHVspMw3najG41S39I0tJpazX9YI2rhnHlhbMJBrTbQCy4duB4ajhyks5CjgFJQa3oZbtHGmHpzdU1MmcTIMaPDe/76XzI+AItLOxml5x2uJjnGjC8rUFyvcGIs966iUwc5CiMq5hTFT72YgKFV3k1KjgmRccaSa5fQuFz7qO/rd2s5p/AU4LuPkuCsSqJmYvsD5bdX/zthk96xz4erBqlWoekJLZI8s57O66nAvhjj7fB3OEYkhJ2g6A5L4Nh55iJZdgthCWl1xwAXM/l17Sy/piLHZh0zhjvIBnJTNC8DJ/ItKzgf0BYbmJwJqeHNoJb3JbquQueckPN1ag4tFf+8ov3dNPy7oPwbUBwpntFDKS+3V2FtBsWZcbIlCmfnrbn5vjJZL6Zpp6Gv1lbDWdBGDHykT1XZYHME10IUN11FpxhpWuIWCOyf2ciTtNI2ZM4MEIqsrJA/ttRZDvDFPry2nUmxQiVk2U+AR869Zkn7gyhBedmfbpwjTys2HDqfrCBc/40JVcwXGnrHUSEqF4S5gBrI5cK3xcicCAwEAAQ==",
+  "name": "Horizon Stream PSN Authenticator",
+  "description": "Capture a one-time PS Remote Play sign-in redirect for Horizon Stream or another compatible client.",
+  "version": "0.6.4",
   "action": {
-    "default_title": "Horizon Stream PSN Account ID",
-    "default_popup": "popup.html"
+    "default_title": "Open Horizon Stream PSN Authenticator"
+  },
+  "side_panel": {
+    "default_path": "popup.html"
   },
   "background": {
     "service_worker": "background.js",
@@ -14,7 +15,8 @@
   },
   "permissions": [
     "storage",
-    "webNavigation"
+    "webNavigation",
+    "sidePanel"
   ],
   "host_permissions": [
     "https://remoteplay.dl.playstation.net/*"
