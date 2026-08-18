@@ -2,6 +2,8 @@
 
 This Chrome extension captures a one-time PS Remote Play redirect URL and presents it as a Horizon Stream QR code plus a copyable plain-text URL. Horizon Stream on Quest scans the QR code and performs the final Account-ID lookup locally. The plain-text URL can also be used by any client that accepts a PS Remote Play sign-in redirect URL.
 
+For normal installation, install **Horizon Stream PSN Authenticator** from the [Chrome Web Store](https://chromewebstore.google.com/detail/horizon-stream-psn-authenticator/pcdjngmmgchdmemcacffbmcpedjpgohe). The unpacked-loading instructions below are intended for local development or testing.
+
 ## Use it
 
 1. Select the **Horizon Stream PSN Authenticator** toolbar icon to open its persistent **side panel**.

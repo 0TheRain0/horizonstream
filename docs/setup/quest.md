@@ -11,7 +11,7 @@ This guide covers Horizon Stream's Quest-specific registration and streaming fea
 - Use a supported Meta Quest headset and update Horizon OS before testing immersive features.
 - Put the Quest and PlayStation on the same local network for initial registration and best streaming quality.
 - On the console, enable Remote Play.
-- For the recommended Account-ID transfer, install the Horizon Stream Chrome extension from the repository's `chrome-extension` folder. Its README explains how to load it in Chrome.
+- For the recommended Account-ID transfer, install the [Horizon Stream PSN Authenticator from the Chrome Web Store](https://chromewebstore.google.com/detail/horizon-stream-psn-authenticator/pcdjngmmgchdmemcacffbmcpedjpgohe). The [extension README](../../chrome-extension/README.md) explains the side-panel workflow and local-development loading option.
 - Keep a Bluetooth gamepad available if you need the most reliable controller support.
 
 ## Register a console
@@ -26,7 +26,7 @@ Give the console a recognizable name and enter its local IP address. A discovere
 
 The recommended method is the **sign-in QR code**. It transfers a one-time redirect URL from Chrome to the headset; the extension does not exchange it with Sony.
 
-1. On a computer, select the Horizon Stream extension's toolbar icon to open its side panel.
+1. On a computer, open the [Horizon Stream PSN Authenticator](https://chromewebstore.google.com/detail/horizon-stream-psn-authenticator/pcdjngmmgchdmemcacffbmcpedjpgohe) and select its toolbar icon to open its side panel.
 2. In the side panel, select **Open PS Remote Play sign-in** and complete Sony's normal sign-in in Chrome.
 3. Keep the side panel open. When the sign-in tab reaches its final redirect, it captures the redirect and replaces the instructions with a QR code and copyable URL.
 4. In Horizon Stream, select **Scan sign-in QR code**. Allow passthrough-camera access when prompted and look at the QR code.
