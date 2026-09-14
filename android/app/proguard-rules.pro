@@ -37,6 +37,15 @@
 # every fresh release install crash before MainActivity could render.
 -keep class com.cmsoft.horizonstream.common.AppDatabase_Impl { *; }
 
+# ML Kit discovers these component registrars from manifest metadata at runtime.
+# R8 can otherwise optimize their component graph so BarcodeScanning.getClient()
+# sees no barcode implementation in a minified build.
+-keep class com.google.mlkit.common.internal.** { *; }
+-keep class com.google.mlkit.vision.common.internal.** { *; }
+-keep class com.google.mlkit.vision.barcode.** { *; }
+-keep class com.google.mlkit.vision.text.** { *; }
+-keep class com.google.firebase.components.** { *; }
+
 
 ##########################################
 # Moshi

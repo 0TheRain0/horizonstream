@@ -1,6 +1,7 @@
 package com.cmsoft.horizonstream.main
 
 import android.content.Intent
+import android.content.pm.PackageManager
 import androidx.compose.animation.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -10,10 +11,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -28,6 +29,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.navigation.NavController
 import com.cmsoft.horizonstream.R
 import com.cmsoft.horizonstream.common.DiscoveredDisplayHost
@@ -39,6 +43,7 @@ import com.cmsoft.horizonstream.lib.DiscoveryHost
 import com.cmsoft.horizonstream.lib.ConnectInfo
 import com.cmsoft.horizonstream.stream.StreamActivity
 import com.cmsoft.horizonstream.BuildConfig
+import com.cmsoft.horizonstream.onboarding.ImmersiveOnboardingActivity
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,6 +58,39 @@ fun HomeScreen(
     // Dialog state
     var hostToWakeup by remember { mutableStateOf<DisplayHost?>(null) }
     var hostToDelete by remember { mutableStateOf<ManualDisplayHost?>(null) }
+    var pendingOnboardingHost by remember { mutableStateOf<DisplayHost?>(null) }
+    var showCameraPermissionDialog by remember { mutableStateOf(false) }
+    var cameraPermissionDenied by remember { mutableStateOf(false) }
+
+    fun startImmersiveOnboarding(host: DisplayHost) {
+        context.startActivity(Intent(context, ImmersiveOnboardingActivity::class.java).apply {
+            action = Intent.ACTION_MAIN
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            putExtra(ImmersiveOnboardingActivity.EXTRA_CONSOLE_NAME, host.name ?: "this PlayStation")
+            putExtra(ImmersiveOnboardingActivity.EXTRA_CONSOLE_ADDRESS, host.host)
+        })
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val host = pendingOnboardingHost
+        pendingOnboardingHost = null
+        if (granted && host != null) {
+            startImmersiveOnboarding(host)
+        } else if (!granted) {
+            cameraPermissionDenied = true
+        }
+    }
+
+    fun requestCameraThenStartOnboarding(host: DisplayHost) {
+        if (ContextCompat.checkSelfPermission(context, ImmersiveOnboardingActivity.HEADSET_CAMERA_PERMISSION) == PackageManager.PERMISSION_GRANTED) {
+            startImmersiveOnboarding(host)
+        } else {
+            pendingOnboardingHost = host
+            showCameraPermissionDialog = true
+        }
+    }
 
     fun launchStream(host: DisplayHost) {
         val registeredHost = host.registeredHost ?: return
@@ -114,10 +152,10 @@ fun HomeScreen(
 
             floatingActionButton = {
                 FloatingActionButton(
-                    onClick = { navController.navigate("edit_manual_console/0") },
+                    onClick = viewModel::refreshDiscovery,
                     containerColor = MaterialTheme.colorScheme.primary
                 ) {
-                    Icon(Icons.Default.Add, contentDescription = "Add Manual Console")
+                    Icon(Icons.Default.Refresh, contentDescription = "Refresh discovered consoles")
                 }
             }
         ) { paddingValues ->
@@ -142,10 +180,23 @@ fun HomeScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = stringResource(if (discoveryActive) R.string.display_hosts_empty_discovery_on_info else R.string.display_hosts_empty_discovery_off_info),
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            text = "No PlayStation found yet",
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = if (discoveryActive) "Turn on your PlayStation and make sure it shares this Quest’s Wi‑Fi. Then scan again." else "Discovery is paused. Turn on your PlayStation, then start a scan.",
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.widthIn(max = 360.dp)
+                        )
+                        Spacer(modifier = Modifier.height(20.dp))
+                        Button(onClick = viewModel::refreshDiscovery) {
+                            Icon(Icons.Default.Refresh, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(if (discoveryActive) "Refresh search" else "Start discovery")
+                        }
                     }
                 } else {
                     LazyColumn(
@@ -166,8 +217,10 @@ fun HomeScreen(
                                             launchStream(host)
                                         }
                                     } else {
-                                        // Register console
-                                        navController.navigate("register/${host.host}?broadcast=false&manualHostId=${if (host is ManualDisplayHost) host.manualHost.id else 0}")
+                                        // First-time setup is a dedicated Quest VR activity so
+                                        // discovery, scan guidance, pairing, and connection stay
+                                        // in the user's view instead of opening a 2D panel.
+                                        requestCameraThenStartOnboarding(host)
                                     }
                                 },
                                 onEdit = {
@@ -250,6 +303,47 @@ fun HomeScreen(
                 TextButton(onClick = { hostToDelete = null }) {
                     Text(stringResource(R.string.action_keep))
                 }
+            }
+        )
+    }
+
+    if (showCameraPermissionDialog || cameraPermissionDenied) {
+        val denied = cameraPermissionDenied
+        AlertDialog(
+            onDismissRequest = {
+                showCameraPermissionDialog = false
+                cameraPermissionDenied = false
+                pendingOnboardingHost = null
+            },
+            title = { Text(if (denied) "Camera access is required" else "Allow camera access for setup") },
+            text = {
+                Text(
+                    if (denied) {
+                        "Camera access was not granted, so Horizon Stream can’t scan the sign-in QR code or PS5 Link Device code. Allow it in system permissions to continue setup."
+                    } else {
+                        "Horizon Stream needs headset-camera access during setup to scan the PlayStation Network QR code and the eight-digit Link Device code. The camera is only used while scanning."
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (denied) {
+                        cameraPermissionDenied = false
+                        showCameraPermissionDialog = true
+                    } else {
+                        showCameraPermissionDialog = false
+                        cameraPermissionLauncher.launch(ImmersiveOnboardingActivity.HEADSET_CAMERA_PERMISSION)
+                    }
+                }) {
+                    Text(if (denied) "Try again" else "Allow camera")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showCameraPermissionDialog = false
+                    cameraPermissionDenied = false
+                    pendingOnboardingHost = null
+                }) { Text("Cancel") }
             }
         )
     }

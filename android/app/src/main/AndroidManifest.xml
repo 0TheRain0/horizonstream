@@ -102,6 +102,22 @@
                 <category android:name="com.oculus.intent.category.VR" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".onboarding.ImmersiveOnboardingActivity"
+            android:theme="@style/VRStreamTheme"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="landscape"
+            android:hardwareAccelerated="true"
+            android:resizeableActivity="false"
+            android:configChanges="density|fontScale|keyboard|keyboardHidden|layoutDirection|locale|mcc|mnc|navigation|orientation|screenLayout|screenSize|smallestScreenSize|touchscreen|uiMode">
+            <meta-data android:name="com.oculus.vr.focusaware" android:value="true" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="com.oculus.intent.category.VR" />
+            </intent-filter>
+        </activity>
 
     </application>
 

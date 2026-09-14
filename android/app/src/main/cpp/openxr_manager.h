@@ -27,6 +27,12 @@ JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nat
 JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nativeSetDepthMap(
         JNIEnv* env, jobject thiz, jbyteArray depth_map, jint width, jint height);
 JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nativeStopVR(JNIEnv* env, jobject thiz);
+JNIEXPORT jobject JNICALL Java_com_cmsoft_horizonstream_onboarding_ImmersiveOnboardingActivity_nativeInitOnboardingVR(JNIEnv* env, jobject thiz, jobject activity);
+JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_onboarding_ImmersiveOnboardingActivity_nativeStartOnboardingRenderLoop(JNIEnv* env, jobject thiz);
+JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_onboarding_ImmersiveOnboardingActivity_nativeSetOnboardingOverlay(JNIEnv* env, jobject thiz, jbyteArray rgba_pixels, jint width, jint height);
+JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_onboarding_ImmersiveOnboardingActivity_nativeSetOnboardingCameraFrame(JNIEnv* env, jobject thiz, jbyteArray rgba_pixels, jint width, jint height);
+JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_onboarding_ImmersiveOnboardingActivity_nativeSetOnboardingHeadLocked(JNIEnv* env, jobject thiz, jboolean enabled);
+JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_onboarding_ImmersiveOnboardingActivity_nativeStopOnboardingVR(JNIEnv* env, jobject thiz);
 
 #ifdef __cplusplus
 }

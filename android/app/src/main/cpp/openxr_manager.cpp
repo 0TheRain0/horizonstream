@@ -22,6 +22,7 @@
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 static PFN_xrGetInstanceProcAddr g_pfnGetInstanceProcAddr = NULL;
+static PFN_xrEnumerateInstanceExtensionProperties g_pfnEnumerateInstanceExtensionProperties = NULL;
 static PFN_xrCreateInstance g_pfnCreateInstance = NULL;
 static PFN_xrDestroyInstance g_pfnDestroyInstance = NULL;
 static PFN_xrGetSystem g_pfnGetSystem = NULL;
@@ -60,11 +61,15 @@ static XrSystemId g_systemId = XR_NULL_SYSTEM_ID;
 static XrSessionState g_sessionState = XR_SESSION_STATE_UNKNOWN;
 static XrSwapchain g_xrSwapchain = XR_NULL_HANDLE;
 static XrSwapchain g_rightEyeSwapchain = XR_NULL_HANDLE;
+static XrSwapchain g_onboardingAuraSwapchain = XR_NULL_HANDLE;
 static XrSpace g_appSpace = XR_NULL_HANDLE;
+static XrSpace g_onboardingViewSpace = XR_NULL_HANDLE;
 static bool g_xrInitialized = false;
 static bool g_xrSessionRunning = false;
 static bool g_xrSessionBegun = false;
 static bool g_renderThreadStarted = false;
+static uint32_t g_controllerSampleCount = 0;
+static uint32_t g_controllerSyncFailureCount = 0;
 static bool g_loggedFirstCompositedFrame = false;
 static bool g_loggedFirstRenderAttempt = false;
 static bool g_loggedRenderPrerequisiteFailure = false;
@@ -95,6 +100,7 @@ static XrAction g_yAction = XR_NULL_HANDLE;
 static XrAction g_menuAction = XR_NULL_HANDLE;
 static XrPath g_leftHandPath = XR_NULL_PATH;
 static XrPath g_rightHandPath = XR_NULL_PATH;
+static bool g_metaTouchPlusEnabled = false;
 
 static EGLDisplay g_eglDisplay = EGL_NO_DISPLAY;
 static EGLConfig g_eglConfig = NULL;
@@ -140,8 +146,24 @@ static int32_t g_settingsOverlayWidth = 0;
 static int32_t g_settingsOverlayHeight = 0;
 static bool g_settingsOverlayVisible = false;
 static bool g_settingsOverlayDirty = false;
+static bool g_onboardingMode = false;
+static std::atomic<bool> g_onboardingHeadLocked(false);
+static std::mutex g_onboardingCameraMutex;
+static std::vector<uint8_t> g_onboardingCameraPixels;
+static int32_t g_onboardingCameraWidth = 0;
+static int32_t g_onboardingCameraHeight = 0;
+static bool g_onboardingCameraDirty = false;
+static GLuint g_onboardingCameraTexture = 0;
 static std::vector<XrSwapchainImageOpenGLESKHR> g_stereoSwapchainImages;
 static std::vector<XrSwapchainImageOpenGLESKHR> g_rightEyeSwapchainImages;
+static std::vector<XrSwapchainImageOpenGLESKHR> g_onboardingAuraSwapchainImages;
+static GLuint g_onboardingAuraProgram = 0;
+static GLint g_onboardingAuraPositionLocation = -1;
+static GLint g_onboardingAuraTextureCoordLocation = -1;
+static GLint g_onboardingAuraTimeLocation = -1;
+static float g_onboardingAuraTime = 0.0f;
+static constexpr int32_t ONBOARDING_AURA_WIDTH = 640;
+static constexpr int32_t ONBOARDING_AURA_HEIGHT = 360;
 
 static XrPath xrPath(const char* path) {
     XrPath result = XR_NULL_PATH;
@@ -202,11 +224,14 @@ static bool initControllerActions() {
         createAction(&g_squeezeAction, XR_ACTION_TYPE_FLOAT_INPUT, "squeeze", "Grip Buttons", hands, 2) &&
         createAction(&g_thumbstickAction, XR_ACTION_TYPE_VECTOR2F_INPUT, "thumbstick", "Thumbsticks", hands, 2) &&
         createAction(&g_thumbstickClickAction, XR_ACTION_TYPE_BOOLEAN_INPUT, "thumbstick_click", "Thumbstick Clicks", hands, 2) &&
-        createAction(&g_aAction, XR_ACTION_TYPE_BOOLEAN_INPUT, "a_button", "Cross", NULL, 0) &&
-        createAction(&g_bAction, XR_ACTION_TYPE_BOOLEAN_INPUT, "b_button", "Circle", NULL, 0) &&
-        createAction(&g_xAction, XR_ACTION_TYPE_BOOLEAN_INPUT, "x_button", "Square", NULL, 0) &&
-        createAction(&g_yAction, XR_ACTION_TYPE_BOOLEAN_INPUT, "y_button", "Triangle", NULL, 0) &&
-        createAction(&g_menuAction, XR_ACTION_TYPE_BOOLEAN_INPUT, "menu_button", "Options", NULL, 0);
+        // Keep face/menu actions hand-scoped too. Some Touch Plus runtimes
+        // report a no-subaction boolean as active for the right controller
+        // only, which made A/B work while left-hand X/Y/menu stayed inactive.
+        createAction(&g_aAction, XR_ACTION_TYPE_BOOLEAN_INPUT, "a_button", "Cross", hands, 2) &&
+        createAction(&g_bAction, XR_ACTION_TYPE_BOOLEAN_INPUT, "b_button", "Circle", hands, 2) &&
+        createAction(&g_xAction, XR_ACTION_TYPE_BOOLEAN_INPUT, "x_button", "Square", hands, 2) &&
+        createAction(&g_yAction, XR_ACTION_TYPE_BOOLEAN_INPUT, "y_button", "Triangle", hands, 2) &&
+        createAction(&g_menuAction, XR_ACTION_TYPE_BOOLEAN_INPUT, "menu_button", "Options", hands, 2);
     if (!created)
         return false;
 
@@ -224,6 +249,7 @@ static bool initControllerActions() {
         { g_xAction, xrPath("/user/hand/left/input/x/click") },
         { g_yAction, xrPath("/user/hand/left/input/y/click") },
         { g_menuAction, xrPath("/user/hand/left/input/menu/click") },
+        { g_menuAction, xrPath("/user/hand/right/input/system/click") },
     };
     XrInteractionProfileSuggestedBinding suggested = {
         XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING
@@ -237,6 +263,23 @@ static bool initControllerActions() {
         return false;
     }
 
+    // Quest 3/3S Touch Plus controllers expose the same semantic paths under
+    // Meta's newer profile. Horizon OS has shipped builds that select this
+    // profile without returning the optional extension from the global
+    // extension enumeration, so do not gate the binding suggestion on the
+    // extension probe. Older runtimes simply reject an unknown profile and
+    // continue using the legacy Oculus suggestion above.
+    XrInteractionProfileSuggestedBinding touchPlus = {
+        XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING
+    };
+    touchPlus.interactionProfile = xrPath(
+        "/interaction_profiles/meta/touch_controller_plus");
+    touchPlus.countSuggestedBindings = sizeof(bindings) / sizeof(bindings[0]);
+    touchPlus.suggestedBindings = bindings;
+    XrResult touchPlusResult = g_pfnSuggestInteractionProfileBindings(
+        g_xrInstance, &touchPlus);
+    LOGI("Touch Plus binding suggestion result: %d.", touchPlusResult);
+
     XrSessionActionSetsAttachInfo attachInfo = {
         XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO
     };
@@ -247,6 +290,8 @@ static bool initControllerActions() {
         LOGE("xrAttachSessionActionSets failed: %d", result);
         return false;
     }
+    g_controllerSampleCount = 0;
+    g_controllerSyncFailureCount = 0;
     LOGI("Quest Touch controller actions initialized.");
     return true;
 }
@@ -288,20 +333,27 @@ static void updateControllerState(JNIEnv* env) {
     XrActionsSyncInfo syncInfo = { XR_TYPE_ACTIONS_SYNC_INFO };
     syncInfo.countActiveActionSets = 1;
     syncInfo.activeActionSets = &activeSet;
-    if (XR_FAILED(g_pfnSyncActions(g_xrSession, &syncInfo)))
+    XrResult syncResult = g_pfnSyncActions(g_xrSession, &syncInfo);
+    if (XR_FAILED(syncResult)) {
+        if ((++g_controllerSyncFailureCount % 120) == 1) {
+            LOGW("Quest controller action sync unavailable: %d (session state %d).",
+                 syncResult, g_sessionState);
+        }
         return;
+    }
 
     XrVector2f leftStick = getVectorAction(g_thumbstickAction, g_leftHandPath);
     XrVector2f rightStick = getVectorAction(g_thumbstickAction, g_rightHandPath);
-    bool aPressed = getBooleanAction(g_aAction);
-    bool bPressed = getBooleanAction(g_bAction);
-    bool xPressed = getBooleanAction(g_xAction);
-    bool yPressed = getBooleanAction(g_yAction);
+    bool aPressed = getBooleanAction(g_aAction, g_rightHandPath);
+    bool bPressed = getBooleanAction(g_bAction, g_rightHandPath);
+    bool xPressed = getBooleanAction(g_xAction, g_leftHandPath);
+    bool yPressed = getBooleanAction(g_yAction, g_leftHandPath);
     bool leftStickPressed = getBooleanAction(
         g_thumbstickClickAction, g_leftHandPath);
     bool rightStickPressed = getBooleanAction(
         g_thumbstickClickAction, g_rightHandPath);
-    bool menuPressed = getBooleanAction(g_menuAction);
+    bool menuPressed = getBooleanAction(g_menuAction, g_leftHandPath) ||
+        getBooleanAction(g_menuAction, g_rightHandPath);
     uint32_t buttons = 0;
     if (aPressed) buttons |= 1u << 0; // Cross
     if (bPressed) buttons |= 1u << 1; // Circle
@@ -314,6 +366,18 @@ static void updateControllerState(JNIEnv* env) {
     if (menuPressed && xPressed) buttons |= 1u << 13; // Share
     if (menuPressed && leftStickPressed) buttons |= 1u << 14; // Touchpad click
     if (menuPressed && yPressed) buttons |= 1u << 15; // PS
+
+    if ((++g_controllerSampleCount % 120) == 0) {
+        LOGI("Quest input sample: state=%d L=(%.2f,%.2f) R=(%.2f,%.2f) "
+             "trig=(%.2f,%.2f) grip=(%.2f,%.2f) buttons=0x%04x.",
+             g_sessionState,
+             leftStick.x, leftStick.y, rightStick.x, rightStick.y,
+             getFloatAction(g_triggerAction, g_leftHandPath),
+             getFloatAction(g_triggerAction, g_rightHandPath),
+             getFloatAction(g_squeezeAction, g_leftHandPath),
+             getFloatAction(g_squeezeAction, g_rightHandPath),
+             buttons);
+    }
 
     env->CallVoidMethod(
         g_activityObject,
@@ -350,6 +414,27 @@ static bool initOpenXRLoader() {
     }
     LOGI("xrGetInstanceProcAddr symbol successfully resolved!");
     return true;
+}
+
+static bool isInstanceExtensionAvailable(const char* extensionName) {
+    if (!g_pfnEnumerateInstanceExtensionProperties || !extensionName)
+        return false;
+    uint32_t count = 0;
+    if (XR_FAILED(g_pfnEnumerateInstanceExtensionProperties(
+            NULL, 0, &count, NULL)) || count == 0)
+        return false;
+    std::vector<XrExtensionProperties> properties(count);
+    for (auto& property : properties)
+        property = { XR_TYPE_EXTENSION_PROPERTIES };
+    if (XR_FAILED(g_pfnEnumerateInstanceExtensionProperties(
+            NULL, count, &count, properties.data())))
+        return false;
+    for (const auto& property : properties) {
+        if (strncmp(property.extensionName, extensionName,
+                    XR_MAX_EXTENSION_NAME_SIZE) == 0)
+            return true;
+    }
+    return false;
 }
 
 static bool initEGL() {
@@ -626,6 +711,54 @@ static bool initStereoProgram() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glActiveTexture(GL_TEXTURE0);
+
+    // A lightweight procedural layer supplies a slow, transparent ambience
+    // behind the onboarding panel. It is independent of the UI texture so it
+    // can move every XR frame without invalidating text or camera scanning.
+    static const char* auraFragmentShaderSource =
+        "precision mediump float;\n"
+        "varying vec2 vTextureCoord;\n"
+        "uniform float uTime;\n"
+        "float glow(vec2 p, vec2 center, float radius) {\n"
+        "  vec2 d = (p - center) / radius;\n"
+        "  return exp(-dot(d, d) * 2.6);\n"
+        "}\n"
+        "void main() {\n"
+        "  vec2 p = (vTextureCoord - 0.5) * vec2(1.7778, 1.0);\n"
+        "  float t = uTime;\n"
+        "  float cyan = glow(p, vec2(cos(t * 0.17) * 0.30, sin(t * 0.13) * 0.16), 0.42);\n"
+        "  float blue = glow(p, vec2(sin(t * 0.11 + 1.7) * 0.39, cos(t * 0.15) * 0.22), 0.54);\n"
+        "  float violet = glow(p, vec2(cos(t * 0.09 + 3.1) * 0.46, sin(t * 0.12 + 0.4) * 0.26), 0.36);\n"
+        "  float radius = length(p - vec2(cos(t * 0.08) * 0.04, sin(t * 0.07) * 0.03));\n"
+        "  float rings = (0.5 + 0.5 * cos(radius * 42.0 - t * 0.9)) * smoothstep(0.83, 0.12, radius);\n"
+        "  float fleck = pow(max(0.0, sin((p.x * 20.0 + p.y * 13.0) + t * 0.65)), 18.0);\n"
+        "  vec3 color = cyan * vec3(0.16, 0.86, 1.0) + blue * vec3(0.16, 0.35, 1.0) + violet * vec3(0.66, 0.34, 1.0) + rings * vec3(0.16, 0.70, 1.0);\n"
+        "  float alpha = clamp(cyan * 0.16 + blue * 0.14 + violet * 0.10 + rings * 0.045 + fleck * 0.075, 0.0, 0.24);\n"
+        "  gl_FragColor = vec4(color, alpha);\n"
+        "}\n";
+    vertexShader = compileShader(GL_VERTEX_SHADER, settingsVertexShaderSource);
+    fragmentShader = compileShader(GL_FRAGMENT_SHADER, auraFragmentShaderSource);
+    if (!vertexShader || !fragmentShader)
+        return false;
+    g_onboardingAuraProgram = glCreateProgram();
+    glAttachShader(g_onboardingAuraProgram, vertexShader);
+    glAttachShader(g_onboardingAuraProgram, fragmentShader);
+    glLinkProgram(g_onboardingAuraProgram);
+    glDeleteShader(vertexShader);
+    glDeleteShader(fragmentShader);
+    glGetProgramiv(g_onboardingAuraProgram, GL_LINK_STATUS, &linked);
+    if (linked != GL_TRUE) {
+        char log[1024] = {};
+        glGetProgramInfoLog(g_onboardingAuraProgram, sizeof(log), NULL, log);
+        LOGE("Onboarding aura shader link failed: %s", log);
+        return false;
+    }
+    g_onboardingAuraPositionLocation = glGetAttribLocation(
+        g_onboardingAuraProgram, "aPosition");
+    g_onboardingAuraTextureCoordLocation = glGetAttribLocation(
+        g_onboardingAuraProgram, "aTextureCoord");
+    g_onboardingAuraTimeLocation = glGetUniformLocation(
+        g_onboardingAuraProgram, "uTime");
     return true;
 }
 
@@ -676,6 +809,85 @@ static void renderSettingsOverlay() {
         g_streamHeight / 10,
         g_streamWidth * 3 / 4,
         g_streamHeight * 4 / 5);
+    // Onboarding uses this texture as an alpha-composited OpenXR layer. Write
+    // its pixels directly so its source alpha remains intact for the runtime.
+    if (!g_onboardingMode) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    }
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    if (!g_onboardingMode)
+        glDisable(GL_BLEND);
+    glActiveTexture(GL_TEXTURE0);
+}
+
+static bool renderOnboardingAuraFrame() {
+    if (g_onboardingAuraSwapchain == XR_NULL_HANDLE ||
+        g_onboardingAuraSwapchainImages.empty() || !g_onboardingAuraProgram)
+        return false;
+    XrSwapchainImageAcquireInfo acquire = { XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO };
+    uint32_t index = 0;
+    if (XR_FAILED(g_pfnAcquireSwapchainImage(
+            g_onboardingAuraSwapchain, &acquire, &index))) return false;
+    XrSwapchainImageWaitInfo wait = { XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO };
+    wait.timeout = XR_INFINITE_DURATION;
+    if (XR_FAILED(g_pfnWaitSwapchainImage(
+            g_onboardingAuraSwapchain, &wait))) return false;
+    glBindFramebuffer(GL_FRAMEBUFFER, g_stereoFramebuffer);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+        g_onboardingAuraSwapchainImages[index].image, 0);
+    glViewport(0, 0, ONBOARDING_AURA_WIDTH, ONBOARDING_AURA_HEIGHT);
+    glClearColor(0.f, 0.f, 0.f, 0.f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    glUseProgram(g_onboardingAuraProgram);
+    g_onboardingAuraTime += 0.013f;
+    if (g_onboardingAuraTime > 1000.f) g_onboardingAuraTime = 0.f;
+    glUniform1f(g_onboardingAuraTimeLocation, g_onboardingAuraTime);
+    glBindBuffer(GL_ARRAY_BUFFER, g_stereoVertexBuffer);
+    glVertexAttribPointer(g_onboardingAuraPositionLocation, 2, GL_FLOAT, GL_FALSE,
+        4 * sizeof(GLfloat), (void*)0);
+    glEnableVertexAttribArray(g_onboardingAuraPositionLocation);
+    glVertexAttribPointer(g_onboardingAuraTextureCoordLocation, 2, GL_FLOAT, GL_FALSE,
+        4 * sizeof(GLfloat), (void*)(2 * sizeof(GLfloat)));
+    glEnableVertexAttribArray(g_onboardingAuraTextureCoordLocation);
+    glDisable(GL_BLEND);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glFinish();
+    XrSwapchainImageReleaseInfo release = { XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
+    return XR_SUCCEEDED(g_pfnReleaseSwapchainImage(
+        g_onboardingAuraSwapchain, &release));
+}
+
+static void renderOnboardingCameraPreview() {
+    std::lock_guard<std::mutex> lock(g_onboardingCameraMutex);
+    if (g_onboardingCameraPixels.empty() || g_onboardingCameraWidth <= 0 ||
+        g_onboardingCameraHeight <= 0 || !g_settingsProgram) return;
+    if (!g_onboardingCameraTexture) {
+        glGenTextures(1, &g_onboardingCameraTexture);
+        glBindTexture(GL_TEXTURE_2D, g_onboardingCameraTexture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    }
+    glUseProgram(g_settingsProgram);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, g_onboardingCameraTexture);
+    if (g_onboardingCameraDirty) {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, g_onboardingCameraWidth,
+            g_onboardingCameraHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+            g_onboardingCameraPixels.data());
+        g_onboardingCameraDirty = false;
+    }
+    glBindBuffer(GL_ARRAY_BUFFER, g_stereoVertexBuffer);
+    glVertexAttribPointer(g_settingsPositionLocation, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), (void*)0);
+    glEnableVertexAttribArray(g_settingsPositionLocation);
+    glVertexAttribPointer(g_settingsTextureCoordLocation, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), (void*)(2 * sizeof(GLfloat)));
+    glEnableVertexAttribArray(g_settingsTextureCoordLocation);
+    // Matches the QR scan card in the (75% x 80%) overlay viewport. Keeping
+    // this geometry in sync makes the live camera image sit inside its frame.
+    glViewport(g_streamWidth * 25 / 100, g_streamHeight * 31 / 100,
+        g_streamWidth * 50 / 100, g_streamHeight * 41 / 100);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -875,6 +1087,59 @@ static bool createStereoSwapchain() {
     return initStereoProgram();
 }
 
+// A separate, larger quad sits behind the onboarding panel. Keeping the
+// atmosphere in its own local-space layer lets it exhibit real parallax while
+// the QR panel may temporarily switch to view space for scanning.
+static bool createOnboardingAuraSwapchain() {
+    uint32_t formatCount = 0;
+    if (XR_FAILED(g_pfnEnumerateSwapchainFormats(
+            g_xrSession, 0, &formatCount, NULL)) || formatCount == 0)
+        return false;
+    std::vector<int64_t> formats(formatCount);
+    if (XR_FAILED(g_pfnEnumerateSwapchainFormats(
+            g_xrSession, formatCount, &formatCount, formats.data())))
+        return false;
+    int64_t format = formats[0];
+    for (int64_t candidate : formats) {
+        if (candidate == GL_RGBA8) {
+            format = candidate;
+            break;
+        }
+    }
+    XrSwapchainCreateInfo info = { XR_TYPE_SWAPCHAIN_CREATE_INFO };
+    info.usageFlags = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT |
+                      XR_SWAPCHAIN_USAGE_SAMPLED_BIT;
+    info.format = format;
+    info.sampleCount = 1;
+    // The aura is intentionally soft and behind the panel, so a compact
+    // texture leaves render bandwidth available for the live scanner.
+    info.width = ONBOARDING_AURA_WIDTH;
+    info.height = ONBOARDING_AURA_HEIGHT;
+    info.faceCount = 1;
+    info.arraySize = 1;
+    info.mipCount = 1;
+    if (XR_FAILED(g_pfnCreateSwapchain(
+            g_xrSession, &info, &g_onboardingAuraSwapchain))) {
+        LOGE("Onboarding aura xrCreateSwapchain failed.");
+        return false;
+    }
+    uint32_t imageCount = 0;
+    if (XR_FAILED(g_pfnEnumerateSwapchainImages(
+            g_onboardingAuraSwapchain, 0, &imageCount, NULL)) || imageCount == 0)
+        return false;
+    g_onboardingAuraSwapchainImages.resize(imageCount);
+    for (auto& image : g_onboardingAuraSwapchainImages)
+        image = { XR_TYPE_SWAPCHAIN_IMAGE_OPENGL_ES_KHR };
+    if (XR_FAILED(g_pfnEnumerateSwapchainImages(
+            g_onboardingAuraSwapchain, imageCount, &imageCount,
+            reinterpret_cast<XrSwapchainImageBaseHeader*>(
+                g_onboardingAuraSwapchainImages.data())))) {
+        LOGE("Onboarding aura xrEnumerateSwapchainImages failed.");
+        return false;
+    }
+    return true;
+}
+
 static bool renderStereoFrame(JNIEnv* env) {
     if (!g_loggedFirstRenderAttempt) {
         g_loggedFirstRenderAttempt = true;
@@ -1055,6 +1320,29 @@ static bool renderStereoFrame(JNIEnv* env) {
     return true;
 }
 
+static bool renderOnboardingFrame() {
+    auto renderEye = [](XrSwapchain swapchain, std::vector<XrSwapchainImageOpenGLESKHR>& images) {
+        XrSwapchainImageAcquireInfo acquire = { XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO };
+        uint32_t index = 0;
+        if (XR_FAILED(g_pfnAcquireSwapchainImage(swapchain, &acquire, &index))) return false;
+        XrSwapchainImageWaitInfo wait = { XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO };
+        wait.timeout = XR_INFINITE_DURATION;
+        if (XR_FAILED(g_pfnWaitSwapchainImage(swapchain, &wait))) return false;
+        glBindFramebuffer(GL_FRAMEBUFFER, g_stereoFramebuffer);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, images[index].image, 0);
+        glViewport(0, 0, g_streamWidth, g_streamHeight);
+        glClearColor(0.f, 0.f, 0.f, 0.f);
+        glClear(GL_COLOR_BUFFER_BIT);
+        // The onboarding camera frame is composed into the same Kotlin bitmap
+        // as its border, so image and reticle share one exact coordinate space.
+        renderSettingsOverlay();
+        glFinish();
+        XrSwapchainImageReleaseInfo release = { XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
+        return XR_SUCCEEDED(g_pfnReleaseSwapchainImage(swapchain, &release));
+    };
+    return renderEye(g_xrSwapchain, g_stereoSwapchainImages);
+}
+
 static void* openxrRenderLoopThread(void* arg) {
     LOGI("OpenXR 3D VR Render Thread active.");
     JNIEnv* env = NULL;
@@ -1127,16 +1415,21 @@ static void* openxrRenderLoopThread(void* arg) {
                 g_pfnBeginFrame(g_xrSession, &beginInfo);
 
                 bool videoFrameReady = frameState.shouldRender != XR_TRUE ||
-                                       (attachedToJvm && renderStereoFrame(env));
-                XrCompositionLayerQuad quadLayers[2];
+                    (g_onboardingMode ? renderOnboardingFrame() : (attachedToJvm && renderStereoFrame(env)));
+                bool auraFrameReady = !g_onboardingMode || frameState.shouldRender != XR_TRUE ||
+                    renderOnboardingAuraFrame();
+                XrCompositionLayerQuad quadLayers[3];
                 memset(quadLayers, 0, sizeof(quadLayers));
                 XrCompositionLayerQuad& leftLayer = quadLayers[0];
                 leftLayer.type = XR_TYPE_COMPOSITION_LAYER_QUAD;
                 leftLayer.next = NULL;
-                // MediaCodec produces opaque video. Enabling source-alpha blending
-                // here can make decoder buffers with undefined alpha disappear.
-                leftLayer.layerFlags = 0;
-                leftLayer.space = g_appSpace;
+                // Stream frames are opaque. The onboarding panel deliberately
+                // keeps its margins transparent so the independent aura layer
+                // remains visible around it.
+                leftLayer.layerFlags = g_onboardingMode
+                    ? XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT : 0;
+                leftLayer.space = (g_onboardingMode && g_onboardingHeadLocked.load() &&
+                    g_onboardingViewSpace != XR_NULL_HANDLE) ? g_onboardingViewSpace : g_appSpace;
                 leftLayer.subImage.swapchain = g_xrSwapchain;
                 leftLayer.subImage.imageRect.offset.x = 0;
                 leftLayer.subImage.imageRect.offset.y = 0;
@@ -1152,27 +1445,49 @@ static void* openxrRenderLoopThread(void* arg) {
                 leftLayer.eyeVisibility = g_stereoConversionEnabled
                         ? XR_EYE_VISIBILITY_LEFT : XR_EYE_VISIBILITY_BOTH;
 
-                XrCompositionLayerBaseHeader* layers[2] = {
-                    reinterpret_cast<XrCompositionLayerBaseHeader*>(&leftLayer),
-                    NULL
-                };
-                uint32_t contentLayerCount = 1;
+                XrCompositionLayerBaseHeader* layers[3] = { NULL, NULL, NULL };
+                uint32_t contentLayerCount = 0;
+                if (g_onboardingMode &&
+                    g_onboardingAuraSwapchain != XR_NULL_HANDLE) {
+                    XrCompositionLayerQuad& auraLayer = quadLayers[1];
+                    auraLayer.type = XR_TYPE_COMPOSITION_LAYER_QUAD;
+                    auraLayer.next = NULL;
+                    auraLayer.layerFlags =
+                        XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+                    auraLayer.space = g_appSpace;
+                    auraLayer.subImage.swapchain = g_onboardingAuraSwapchain;
+                    auraLayer.subImage.imageRect.offset.x = 0;
+                    auraLayer.subImage.imageRect.offset.y = 0;
+                    auraLayer.subImage.imageRect.extent.width = ONBOARDING_AURA_WIDTH;
+                    auraLayer.subImage.imageRect.extent.height = ONBOARDING_AURA_HEIGHT;
+                    auraLayer.subImage.imageArrayIndex = 0;
+                    auraLayer.pose.position.x = 0.0f;
+                    auraLayer.pose.position.y = 0.0f;
+                    auraLayer.pose.position.z = -6.0f;
+                    auraLayer.pose.orientation.w = 1.0f;
+                    auraLayer.size.width = 18.0f;
+                    auraLayer.size.height = 10.125f;
+                    auraLayer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+                    layers[contentLayerCount++] =
+                        reinterpret_cast<XrCompositionLayerBaseHeader*>(&auraLayer);
+                }
+                layers[contentLayerCount++] =
+                    reinterpret_cast<XrCompositionLayerBaseHeader*>(&leftLayer);
                 if (g_stereoConversionEnabled) {
-                    XrCompositionLayerQuad& rightLayer = quadLayers[1];
+                    XrCompositionLayerQuad& rightLayer = quadLayers[2];
                     rightLayer = leftLayer;
                     rightLayer.subImage.swapchain = g_rightEyeSwapchain;
                     rightLayer.subImage.imageRect.offset.x = 0;
                     rightLayer.eyeVisibility = XR_EYE_VISIBILITY_RIGHT;
-                    layers[1] = reinterpret_cast<XrCompositionLayerBaseHeader*>(
-                        &rightLayer);
-                    contentLayerCount = 2;
+                    layers[contentLayerCount++] =
+                        reinterpret_cast<XrCompositionLayerBaseHeader*>(&rightLayer);
                 }
 
                 XrFrameEndInfo endInfo = { XR_TYPE_FRAME_END_INFO, NULL };
                 endInfo.displayTime = frameState.predictedDisplayTime;
                 endInfo.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
                 bool submitContent = frameState.shouldRender == XR_TRUE &&
-                                     videoFrameReady;
+                                     videoFrameReady && auraFrameReady;
                 endInfo.layerCount = submitContent ? contentLayerCount : 0;
                 endInfo.layers = submitContent
                         ? (const XrCompositionLayerBaseHeader* const*)&layers
@@ -1258,6 +1573,10 @@ JNIEXPORT jobject JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_
 
     PFN_xrInitializeLoaderKHR pfnInitializeLoaderKHR = NULL;
     g_pfnGetInstanceProcAddr(XR_NULL_HANDLE, "xrInitializeLoaderKHR", (PFN_xrVoidFunction*)&pfnInitializeLoaderKHR);
+    g_pfnGetInstanceProcAddr(
+        XR_NULL_HANDLE,
+        "xrEnumerateInstanceExtensionProperties",
+        (PFN_xrVoidFunction*)&g_pfnEnumerateInstanceExtensionProperties);
     if (pfnInitializeLoaderKHR) {
         XrLoaderInitInfoAndroidKHR loaderInitInfo;
         memset(&loaderInitInfo, 0, sizeof(loaderInitInfo));
@@ -1266,6 +1585,14 @@ JNIEXPORT jobject JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_
         loaderInitInfo.applicationVM = (void*)g_javaVm;
         loaderInitInfo.applicationContext = (void*)g_activityObject;
         pfnInitializeLoaderKHR((const XrLoaderInitInfoBaseHeaderKHR*)&loaderInitInfo);
+    }
+    // Some Android loaders only expose the global enumeration entry point
+    // after xrInitializeLoaderKHR has selected the Horizon runtime.
+    if (!g_pfnEnumerateInstanceExtensionProperties) {
+        g_pfnGetInstanceProcAddr(
+            XR_NULL_HANDLE,
+            "xrEnumerateInstanceExtensionProperties",
+            (PFN_xrVoidFunction*)&g_pfnEnumerateInstanceExtensionProperties);
     }
 
     XrInstanceCreateInfoAndroidKHR androidCreateInfo;
@@ -1280,6 +1607,17 @@ JNIEXPORT jobject JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_
         "XR_KHR_opengl_es_enable",
         "XR_KHR_android_surface_swapchain"
     };
+    g_metaTouchPlusEnabled = isInstanceExtensionAvailable(
+        XR_META_TOUCH_CONTROLLER_PLUS_EXTENSION_NAME);
+    const char* enabledExtensions[4] = {
+        extensions[0], extensions[1], extensions[2], NULL
+    };
+    uint32_t enabledExtensionCount = 3;
+    if (g_metaTouchPlusEnabled) {
+        enabledExtensions[enabledExtensionCount++] =
+            XR_META_TOUCH_CONTROLLER_PLUS_EXTENSION_NAME;
+        LOGI("Meta Touch Plus controller extension is available; enabling it.");
+    }
 
     XrInstanceCreateInfo createInfo;
     memset(&createInfo, 0, sizeof(createInfo));
@@ -1290,8 +1628,8 @@ JNIEXPORT jobject JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_
     strncpy(createInfo.applicationInfo.engineName, "Horizon Stream", XR_MAX_ENGINE_NAME_SIZE - 1);
     createInfo.applicationInfo.engineVersion = 1;
     createInfo.applicationInfo.apiVersion = XR_CURRENT_API_VERSION;
-    createInfo.enabledExtensionCount = 3;
-    createInfo.enabledExtensionNames = extensions;
+    createInfo.enabledExtensionCount = enabledExtensionCount;
+    createInfo.enabledExtensionNames = enabledExtensions;
 
     g_pfnGetInstanceProcAddr(XR_NULL_HANDLE, "xrCreateInstance", (PFN_xrVoidFunction*)&g_pfnCreateInstance);
     if (!g_pfnCreateInstance) return NULL;
@@ -1372,6 +1710,10 @@ JNIEXPORT jobject JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_
     spaceCreateInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
     spaceCreateInfo.poseInReferenceSpace.orientation.w = 1.0f;
     g_pfnCreateReferenceSpace(g_xrSession, &spaceCreateInfo, &g_appSpace);
+    if (g_onboardingMode) {
+        spaceCreateInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_VIEW;
+        g_pfnCreateReferenceSpace(g_xrSession, &spaceCreateInfo, &g_onboardingViewSpace);
+    }
 
     // Always route decoded video through SurfaceTexture and an OpenGL
     // swapchain. Besides supporting stereo conversion, SurfaceTexture's
@@ -1379,7 +1721,8 @@ JNIEXPORT jobject JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_
     if (!g_pfnCreateSwapchain || !g_pfnEnumerateSwapchainFormats ||
         !g_pfnEnumerateSwapchainImages || !g_pfnAcquireSwapchainImage ||
         !g_pfnWaitSwapchainImage || !g_pfnReleaseSwapchainImage ||
-        !createStereoSwapchain()) {
+        !createStereoSwapchain() ||
+        (g_onboardingMode && !createOnboardingAuraSwapchain())) {
         LOGE("Failed to create the OpenXR video rendering pipeline.");
         return NULL;
     }
@@ -1524,6 +1867,7 @@ JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nat
         if (g_stereoProgram) glDeleteProgram(g_stereoProgram);
         if (g_depthCaptureProgram) glDeleteProgram(g_depthCaptureProgram);
         if (g_settingsProgram) glDeleteProgram(g_settingsProgram);
+        if (g_onboardingAuraProgram) glDeleteProgram(g_onboardingAuraProgram);
         if (g_depthCaptureFramebuffer)
             glDeleteFramebuffers(1, &g_depthCaptureFramebuffer);
         if (g_videoTexture) glDeleteTextures(1, &g_videoTexture);
@@ -1536,6 +1880,11 @@ JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nat
         g_stereoProgram = 0;
         g_depthCaptureProgram = 0;
         g_settingsProgram = 0;
+        g_onboardingAuraProgram = 0;
+        g_onboardingAuraPositionLocation = -1;
+        g_onboardingAuraTextureCoordLocation = -1;
+        g_onboardingAuraTimeLocation = -1;
+        g_onboardingAuraTime = 0.f;
         g_depthCaptureFramebuffer = 0;
         g_videoTexture = 0;
         g_depthTexture = 0;
@@ -1552,6 +1901,10 @@ JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nat
             g_pfnDestroySwapchain(g_xrSwapchain);
             g_xrSwapchain = XR_NULL_HANDLE;
         }
+        if (g_onboardingAuraSwapchain != XR_NULL_HANDLE && g_pfnDestroySwapchain) {
+            g_pfnDestroySwapchain(g_onboardingAuraSwapchain);
+            g_onboardingAuraSwapchain = XR_NULL_HANDLE;
+        }
         if (g_rightEyeSwapchain != XR_NULL_HANDLE && g_pfnDestroySwapchain) {
             g_pfnDestroySwapchain(g_rightEyeSwapchain);
             g_rightEyeSwapchain = XR_NULL_HANDLE;
@@ -1559,6 +1912,10 @@ JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nat
         if (g_appSpace != XR_NULL_HANDLE && g_pfnDestroySpace) {
             g_pfnDestroySpace(g_appSpace);
             g_appSpace = XR_NULL_HANDLE;
+        }
+        if (g_onboardingViewSpace != XR_NULL_HANDLE && g_pfnDestroySpace) {
+            g_pfnDestroySpace(g_onboardingViewSpace);
+            g_onboardingViewSpace = XR_NULL_HANDLE;
         }
         if (g_pfnDestroySession) g_pfnDestroySession(g_xrSession);
         g_xrSession = XR_NULL_HANDLE;
@@ -1601,6 +1958,7 @@ JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nat
     }
     g_stereoSwapchainImages.clear();
     g_rightEyeSwapchainImages.clear();
+    g_onboardingAuraSwapchainImages.clear();
     g_updateTexImageMethod = NULL;
     g_getTransformMatrixMethod = NULL;
     g_releaseSurfaceTextureMethod = NULL;
@@ -1618,7 +1976,36 @@ JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nat
     g_loggedFirstRenderAttempt = false;
     g_loggedRenderPrerequisiteFailure = false;
     g_loggedSurfaceTextureFailure = false;
+    g_controllerSampleCount = 0;
+    g_controllerSyncFailureCount = 0;
     g_xrInitialized = false;
+}
+
+JNIEXPORT jobject JNICALL Java_com_cmsoft_horizonstream_onboarding_ImmersiveOnboardingActivity_nativeInitOnboardingVR(JNIEnv* env, jobject thiz, jobject activity) {
+    g_onboardingMode = true;
+    jobject surface = Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nativeInitVR(env, thiz, activity, 1280, 720, JNI_FALSE, 0.0f);
+    g_onboardingMode = surface != NULL;
+    return surface;
+}
+JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_onboarding_ImmersiveOnboardingActivity_nativeStartOnboardingRenderLoop(JNIEnv* env, jobject thiz) {
+    Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nativeStartRenderLoop(env, thiz, NULL);
+}
+JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_onboarding_ImmersiveOnboardingActivity_nativeSetOnboardingOverlay(JNIEnv* env, jobject thiz, jbyteArray bytes, jint width, jint height) {
+    Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nativeSetSettingsOverlay(env, thiz, bytes, width, height);
+}
+JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_onboarding_ImmersiveOnboardingActivity_nativeSetOnboardingCameraFrame(JNIEnv* env, jobject thiz, jbyteArray bytes, jint width, jint height) {
+    if (!bytes || width <= 0 || height <= 0 || (size_t)env->GetArrayLength(bytes) != (size_t)width * height * 4) return;
+    std::lock_guard<std::mutex> lock(g_onboardingCameraMutex);
+    g_onboardingCameraPixels.resize((size_t)width * height * 4);
+    env->GetByteArrayRegion(bytes, 0, env->GetArrayLength(bytes), reinterpret_cast<jbyte*>(g_onboardingCameraPixels.data()));
+    g_onboardingCameraWidth = width; g_onboardingCameraHeight = height; g_onboardingCameraDirty = true;
+}
+JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_onboarding_ImmersiveOnboardingActivity_nativeSetOnboardingHeadLocked(JNIEnv* env, jobject thiz, jboolean enabled) {
+    g_onboardingHeadLocked.store(enabled == JNI_TRUE);
+}
+JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_onboarding_ImmersiveOnboardingActivity_nativeStopOnboardingVR(JNIEnv* env, jobject thiz) {
+    g_onboardingMode = false;
+    Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nativeStopVR(env, thiz);
 }
 
 }

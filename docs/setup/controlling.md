@@ -4,15 +4,15 @@
 
 For complete Quest setup instructions, see [Horizon Stream on Quest](quest.md). The remainder of this page documents the inherited desktop and Steam Deck controller workflows.
 
-!!! Warning "Experimental Touch controller support"
+!!! Note "Touch controller support"
 
-    Quest Touch controller gamepad emulation works only while **Immersive VR Mode** is enabled. It is experimental; use a Bluetooth controller if a particular game needs the most reliable input behavior.
+    Quest Touch controller support works while **Immersive VR Mode** is enabled. Use a Bluetooth controller if a particular game needs the most reliable input behavior.
 
-### Enable Quest Touch controller emulation
+### Enable Quest Touch controller support
 
 1. In Horizon Stream, open **Settings**.
-2. Under **Quest & VR Hardware**, enable **Immersive VR Mode (Experimental)**.
-3. Enable **Quest Controller Gamepad Emulation**.
+2. Under **Quest & VR Hardware**, enable **Immersive VR Mode**.
+3. Enable **Quest Controller Support**.
 4. Start a new stream. The Touch controllers are read directly by the immersive OpenXR session and sent to the PlayStation as a virtual controller.
 
 ### Quest Touch to PlayStation mapping

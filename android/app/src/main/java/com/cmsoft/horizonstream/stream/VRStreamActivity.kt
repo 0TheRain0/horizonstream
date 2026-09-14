@@ -2,6 +2,8 @@
 
 package com.cmsoft.horizonstream.stream
 
+import android.app.PendingIntent
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -20,6 +22,7 @@ import com.cmsoft.horizonstream.common.ControllerAssignmentLearner
 import com.cmsoft.horizonstream.common.Preferences
 import com.cmsoft.horizonstream.depth.DepthAnythingV2Bridge
 import com.cmsoft.horizonstream.lib.ControllerState
+import com.cmsoft.horizonstream.main.MainActivity
 
 class VRStreamActivity : StreamActivity(), SurfaceHolder.Callback {
     private data class ImmersiveErrorDialog(
@@ -86,6 +89,8 @@ class VRStreamActivity : StreamActivity(), SurfaceHolder.Callback {
     private var settingsStickLatched = false
     @Volatile
     private var acceptQuestControllerInput = false
+    @Volatile
+    private var finishRequested = false
     private val controllerHandler = Handler(Looper.getMainLooper())
     @Volatile
     private var questMenuHeld = false
@@ -110,7 +115,7 @@ class VRStreamActivity : StreamActivity(), SurfaceHolder.Callback {
             questMenuSecondTapInProgress = false
             controllerHandler.removeCallbacks(dispatchQuestMenuSingleTap)
             Log.i(TAG, "Quest Menu long-press recognized; exiting stream.")
-            finish()
+            exitImmersiveStream()
         }
     }
     private val dispatchQuestMenuSingleTap = Runnable {
@@ -131,6 +136,65 @@ class VRStreamActivity : StreamActivity(), SurfaceHolder.Callback {
                 nativeSetSettingsOverlay(null, 0, 0)
             }
         }
+    }
+
+    /**
+     * Return from the volumetric task to the app's 2D panel. Horizon OS needs
+     * the panel launch delivered through Home; directly starting MainActivity
+     * from a volumetric task is subject to background-launch hardening and can
+     * leave the user looking at the system shell.
+     */
+    private fun exitImmersiveStream() {
+        if (finishRequested || isFinishing || isDestroyed)
+            return
+        finishRequested = true
+        acceptQuestControllerInput = false
+        questMenuHeld = false
+        questMenuLongPressTriggered = false
+        questMenuAwaitingSecondTap = false
+        questMenuSecondTapInProgress = false
+        questMenuGestureSuppressed = false
+        controllerHandler.removeCallbacks(questMenuLongPress)
+        controllerHandler.removeCallbacks(dispatchQuestMenuSingleTap)
+        cancelImmersiveExitHint()
+
+        runCatching {
+            val panelIntent = Intent(applicationContext, MainActivity::class.java).apply {
+                action = Intent.ACTION_MAIN
+                addCategory("com.oculus.intent.category.2D")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+            val panelPendingIntent = PendingIntent.getActivity(
+                applicationContext,
+                0,
+                panelIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val homeIntent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_HOME)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                putExtra("extra_launch_in_home_pending_intent", panelPendingIntent)
+            }
+            startActivity(homeIntent)
+            // The panel is queued by Home, so the volumetric task can be
+            // removed immediately without racing the panel launch.
+            finishAndRemoveTask()
+        }.onFailure {
+            Log.w(TAG, "Unable to hand the immersive task back to the main panel.", it)
+            if (!isFinishing)
+                super.finish()
+        }
+    }
+
+    override fun finish() {
+        // StreamActivity can receive a quit event during the same pause that
+        // the controller long-press is finishing this activity.
+        if (finishRequested)
+            return
+        finishRequested = true
+        super.finish()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

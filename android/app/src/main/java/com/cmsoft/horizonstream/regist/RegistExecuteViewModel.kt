@@ -65,6 +65,17 @@ class RegistExecuteViewModel(val database: AppDatabase): ViewModel()
 		regist?.stop()
 	}
 
+	/** Prepare this registration runner for a fresh Link Device code. */
+	fun reset()
+	{
+		regist?.dispose()
+		regist = null
+		host = null
+		assignManualHostId = null
+		disposable.clear()
+		_state.value = State.IDLE
+	}
+
 	private fun registEvent(event: RegistEvent)
 	{
 		when(event)

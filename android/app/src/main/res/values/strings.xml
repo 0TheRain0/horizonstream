@@ -96,10 +96,10 @@
     <string name="preferences_button_haptic_enabled_summary">Use phone vibration motor for short haptic feedback on button touches</string>
 
     <string name="preferences_category_title_quest_vr">Quest &amp; VR Hardware</string>
-    <string name="preferences_quest_controller_emulation_title">Quest Controller Gamepad Emulation</string>
+    <string name="preferences_quest_controller_emulation_title">Quest Controller Support</string>
     <string name="preferences_quest_controller_emulation_summary">Map Touch controls to PS5; double-tap Menu is PS, Menu+X is Share, Menu+Y is PS, Menu+L3 is touchpad, and left grip+stick is D-pad</string>
-    <string name="preferences_immersive_vr_mode_title">Immersive VR Mode (Experimental)</string>
-    <string name="preferences_immersive_vr_mode_summary">Experimental feature that presents the stream on a head-tracked spatial screen</string>
+    <string name="preferences_immersive_vr_mode_title">Immersive VR Mode</string>
+    <string name="preferences_immersive_vr_mode_summary">Present the stream on a head-tracked spatial screen</string>
 
     <string name="preferences_category_title_spatial_3d">Spatial 3D Rendering</string>
     <string name="preferences_simulated_3d_enabled_title">AI 2D-to-3D Depth (Experimental)</string>

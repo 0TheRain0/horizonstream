@@ -86,6 +86,18 @@ class DiscoveryManager
 		updateService()
 	}
 
+	/** Restart local-network discovery so the console list reflects a fresh scan. */
+	fun refresh()
+	{
+		discoveryService?.dispose()
+		discoveryService = null
+		discoveredHostsSubjectRaw.onNext(listOf())
+		if(!active)
+			active = true
+		else
+			updateService()
+	}
+
 	fun dispose()
 	{
 		active = false

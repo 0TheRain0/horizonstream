@@ -46,6 +46,7 @@ class Preferences(context: Context)
 		val fpsAll = FPS.values()
 		val codecDefault = Codec.CODEC_H265
 		val codecAll = Codec.values()
+		private const val PSN_ACCOUNT_ID_KEY = "horizonstream.psn_account_id"
 	}
 
 	private val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
@@ -158,6 +159,20 @@ class Preferences(context: Context)
 				.apply()
 		}
 
+	/**
+	 * The PSN account ID returned by the Chrome-extension sign-in flow. It is
+	 * intentionally kept separate from a console registration: the same PSN
+	 * account can be used to pair more than one PlayStation.
+	 */
+	var psnAccountId: String?
+		get() = sharedPreferences.getString(PSN_ACCOUNT_ID_KEY, null)
+		set(value) {
+			sharedPreferences.edit().apply {
+				if (value.isNullOrBlank()) remove(PSN_ACCOUNT_ID_KEY)
+				else putString(PSN_ACCOUNT_ID_KEY, value)
+			}.apply()
+		}
+
 	private val videoProfileDefaultBitrate get() = ConnectVideoProfile.preset(resolution.preset, fps.preset, codec.codec)
 	val videoProfile get() = videoProfileDefaultBitrate.let {
 		val bitrate = bitrate
@@ -166,4 +181,5 @@ class Preferences(context: Context)
 		else
 			it.copy(bitrate = bitrate)
 	}
+
 }

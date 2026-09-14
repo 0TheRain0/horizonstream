@@ -58,6 +58,11 @@ class MainViewModel(val database: AppDatabase, val preferences: Preferences): Vi
 		discoveryManager.discoveryActive.toLiveData()
 	}
 
+	fun refreshDiscovery()
+	{
+		discoveryManager.refresh()
+	}
+
 	fun deleteManualHost(manualHost: ManualHost)
 	{
 		database.manualHostDao()

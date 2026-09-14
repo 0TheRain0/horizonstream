@@ -2,11 +2,11 @@
 
 !!! Info "Using Horizon Stream on Meta Quest?"
 
-    Start with the [Horizon Stream on Quest guide](quest.md). It documents the Quest registration flow, the Chrome redirect-QR transfer, immersive streaming, Quest Touch controller emulation, button mappings, and experimental AI 2D-to-3D conversion.
+    Start with the [Horizon Stream on Quest guide](quest.md). It documents console discovery, camera permission, Chrome/PSN sign-in, the one-time QR transfer, saved Account IDs, PS5 Link Device scanning, immersive streaming, Quest Touch controller support, button mappings, and AI 2D-to-3D conversion.
 
     The remaining pages in this section are retained from chiaki-ng and primarily describe desktop and Steam Deck workflows.
 
-This section covers how to set up PlayStation Remote Play (using `chiaki-ng`) on your client device [i.e., Steam Deck]. It covers installing the `chiaki-ng` package, configuring an automatic (scripted) launch, and adding `chiaki-ng` to _Game Mode_ with icons and a custom controller configuration to boot. Please switch into _Desktop Mode_ for this process.
+The Quest guide is the current setup path for Horizon Stream. The remaining pages cover the inherited `chiaki-ng` desktop and Steam Deck workflows; they are not required for console setup on Meta Quest.
 
 !!! Tip "Open This Documentation on Your client device [i.e., Steam Deck] for Easy Copy/Pasting"
 

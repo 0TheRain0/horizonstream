@@ -6,16 +6,17 @@ This project is a dedicated VR fork of the [chiaki-ng code](https://github.com/s
 
 ## Goals & Roadmap
 - Provide an immersive, high-performance PlayStation Remote Play experience directly on Meta Quest headsets.
-- Streamline and simplify the console pairing process in future updates.
+- Keep console discovery, PSN sign-in, code scanning, pairing, and connection in one clear Quest-first flow.
 
 ## Quest features
 
-- **Chrome redirect-QR registration:** The bundled Chrome extension transfers a one-time PS Remote Play redirect URL to the Quest. Horizon Stream completes the Account-ID lookup locally, without the extension calling Sony.
-- **Immersive VR Mode (experimental):** Presents the stream on a head-tracked spatial screen and keeps connection errors and PIN prompts visible in-headset.
-- **Quest Touch controller emulation (experimental):** Uses Quest controllers as a virtual PlayStation controller during immersive streams, with dedicated Menu-button gestures and a learnable exit-stream button.
+- **Guided Quest onboarding:** Discover an unregistered console, approve camera access, sign in to PlayStation Network in Chrome, scan the one-time sign-in QR code, and scan the console's Link Device code from the headset.
+- **Saved PSN Account ID:** Horizon Stream retrieves the Account ID locally and saves it in the app, so repeat onboarding skips the sign-in QR step and goes straight to the console Link Device step.
+- **Immersive VR Mode:** Presents the stream on a head-tracked spatial screen and keeps connection errors and pairing prompts visible in-headset.
+- **Quest Touch controller support:** Uses Quest controllers as a virtual PlayStation controller during immersive streams, with clear mappings, dedicated Menu-button gestures, and a learnable exit-stream button.
 - **AI 2D-to-3D depth (experimental):** Uses Depth Anything V2 to infer depth from the 2D stream and render separate eye views. Choose Comfort, Balanced, Enhanced, or Strong depth strength.
 
-Experimental features can increase battery use, latency, or visual/input instability. A Bluetooth gamepad and the regular flat stream remain the recommended fallback when reliability is more important than immersion.
+AI depth can increase battery use or visual complexity. A Bluetooth gamepad and the regular flat stream remain available when reliability is more important than immersion.
 
 ## Documentation
 
@@ -38,38 +39,31 @@ In accordance with the AGPLv3:
 
 A copy of the AGPLv3 license is included in the `COPYING` file.
 
-## Getting Started: Pairing with PlayStation 5
+## Getting Started: Quest setup
 
-To use Horizon Stream, you need to link it to your PlayStation 5 console using a Base64 encoded PSN Account ID and a Pairing PIN.
+Horizon Stream's Quest-first setup walks you through discovery, PSN sign-in, console pairing, and immersive streaming. The Quest and PlayStation should be on the same local network, and Remote Play must be enabled on the console.
 
-### 1. Obtain Your PSN Account ID (Base64)
-Sony requires a specific 8-byte Account ID to register for Remote Play.
-Install the [Horizon Stream PSN Authenticator from the Chrome Web Store](https://chromewebstore.google.com/detail/horizon-stream-psn-authenticator/pcdjngmmgchdmemcacffbmcpedjpgohe), then use the **Chrome QR transfer** before obtaining a console Link Device code:
+### First-time setup
 
-1. Open the [extension instructions](chrome-extension/README.md), select the extension's toolbar icon to open the side panel, then select **Open PS Remote Play sign-in** and complete Sony's normal sign-in in Chrome.
-2. Keep the side panel open. It automatically displays the sign-in QR code when Sony reaches the final redirect.
-3. In Horizon Stream registration, select **Scan sign-in QR code** and look at that code through the headset. Horizon Stream completes the Account-ID lookup locally.
+1. Turn on the PlayStation and wait for it to appear as an unregistered console in Horizon Stream. If it does not appear, use **Refresh search** and check the network.
+2. Select the discovered console. Before immersive onboarding opens, approve the camera permission request. The camera is used only to scan setup codes.
+3. On a computer with Google Chrome, install the [Horizon Stream PSN Authenticator](https://chromewebstore.google.com/detail/horizon-stream-psn-authenticator/pcdjngmmgchdmemcacffbmcpedjpgohe).
+4. Open the extension side panel, choose **Open PS Remote Play sign-in**, and complete the normal PlayStation Network sign-in in Chrome. Keep the panel open until it displays the one-time QR code.
+5. In the headset, press a Quest controller button to scan the QR code. Horizon Stream retrieves the PSN Account ID locally and saves it for future setup.
+6. On the PS5, open **Settings → System → Remote Play → Link Device**. Leave the eight-digit code visible, then press a Quest controller button when onboarding asks you to scan it.
+7. Keep the PS5 awake and on the same network while Horizon Stream pairs it. After pairing, review the Quest controller mappings and press any button to connect.
 
-The QR code contains a one-time PS Remote Play redirect URL, so scan it immediately and never share it. Alternatively, paste that complete redirect URL directly into Horizon Stream, or paste a Base64 Account ID obtained through another method.
+The QR code is a one-time redirect and should never be shared. If it expires, create a new Chrome sign-in and scan the new code once.
 
-### 2. Obtain a fresh Link Device code from your PlayStation 5
-1. Turn on your PS5 and go to **Settings > System > Remote Play**.
-2. Toggle on **Enable Remote Play**.
-3. Select **Link Device**. The screen will display an 8-digit PIN.
+### Repeat setup
 
-### 3. Choose a controller
-**Quest Controller Gamepad Emulation** is available experimentally in Immersive VR Mode. Pair a Bluetooth controller when you prefer conventional or more reliable gamepad input.
-1. Put your controller (e.g., PlayStation DualSense or DualShock 4) into Bluetooth pairing mode. (For PlayStation controllers, hold the **PS button** and the **Share/Create button** until the light bar flashes rapidly).
-2. On your Meta Quest, open the **Settings** menu.
-3. Navigate to **Devices > Bluetooth**.
-4. Select your controller from the list of available devices to pair it.
+After the PSN Account ID has been saved, future onboarding skips the computer sign-in and QR pages. It goes directly to the PS5 Link Device instructions. A fresh eight-digit Link Device code is still required for each new console registration.
 
-### 4. Connect Horizon Stream
-1. Open the Horizon Stream app on your Meta Quest.
-2. Ensure your headset is on the same local network as your PS5.
-3. Select your console when it appears, or enter its IP address manually.
-4. First provide your **Base64 PSN Account ID** using the QR transfer, a redirect URL, or an Account ID obtained elsewhere. Then obtain and enter the fresh **8-digit Link Device code** from your console screen. It is not your PSN password or sign-in PIN.
-5. Click **Register** to complete the pairing. You're now ready to stream!
+### Controllers
+
+Quest Touch controllers can emulate a PlayStation controller in Immersive VR Mode. A/B map to Cross/Circle, X/Y to Square/Triangle, triggers to L2/R2, grips to L1/R1, and the left-grip plus left-stick chord to the D-pad. Stick clicks map to L3/R3. Quest Menu gestures provide Options, the PlayStation button, and stream exit.
+
+You can also pair a DualSense, DualShock 4, or another Bluetooth gamepad in **Quest Settings → Devices → Bluetooth**.
 
 ## Support & Community
 

@@ -2,71 +2,75 @@
 
 This guide covers Horizon Stream's Quest-specific registration and streaming features. Horizon Stream is a Quest-focused Remote Play client built on the Chiaki/chiaki-ng implementation.
 
-!!! Warning "Sony compatibility and experimental features"
+!!! Warning "Sony compatibility"
 
-    Horizon Stream is not endorsed by Sony. The redirect-QR Account-ID process uses a compatibility workflow that Sony may change or stop accepting. Immersive VR Mode, Quest Touch controller emulation, and AI 2D-to-3D depth are experimental and may increase latency, battery use, or the chance of visual/input issues.
+    Horizon Stream is not endorsed by Sony. The redirect-QR Account-ID process uses a compatibility workflow that Sony may change or stop accepting. AI 2D-to-3D depth may increase latency, battery use, or the chance of visual artifacts.
 
 ## Before you begin
 
 - Use a supported Meta Quest headset and update Horizon OS before testing immersive features.
 - Put the Quest and PlayStation on the same local network for initial registration and best streaming quality.
-- On the console, enable Remote Play.
-- For the recommended Account-ID transfer, install the [Horizon Stream PSN Authenticator from the Chrome Web Store](https://chromewebstore.google.com/detail/horizon-stream-psn-authenticator/pcdjngmmgchdmemcacffbmcpedjpgohe). The [extension README](../../chrome-extension/README.md) explains the side-panel workflow and local-development loading option.
+- Turn on the PlayStation and enable Remote Play. The Quest must discover an unregistered console before the immersive setup can start.
+- Have a computer with Google Chrome available. Install the [Horizon Stream PSN Authenticator from the Chrome Web Store](https://chromewebstore.google.com/detail/horizon-stream-psn-authenticator/pcdjngmmgchdmemcacffbmcpedjpgohe). The [extension README](../../chrome-extension/README.md) explains the side-panel workflow and local-development loading option.
+- Allow headset-camera access when Horizon Stream asks before opening onboarding. The camera is used only for the sign-in QR code and the console Link Device code.
 - Keep a Bluetooth gamepad available if you need the most reliable controller support.
 
-## Register a console
+## First-time console setup
 
-From the Horizon Stream connections page, select **Add Console Manually** (or select a discovered unregistered console). The form intentionally asks for the Account ID before the short-lived console code.
+The normal Quest flow is designed to keep the setup instructions in view:
 
-### 1. Enter a name and console IP address
+1. Open Horizon Stream and wait for the console to appear on the connections page.
+2. Select the discovered, unregistered console. If no console appears, refresh discovery and check that the PlayStation is on, Remote Play is enabled, and both devices are on the same network.
+3. Approve the camera permission dialog in the regular Quest view. Horizon Stream then opens the immersive onboarding flow.
 
-Give the console a recognizable name and enter its local IP address. A discovered console can prefill the address.
+The first onboarding page confirms the selected console. Press any button on a Quest controller to advance. You do not need to enter a redirect URL, PSN Online ID, or Account ID manually in this flow.
 
-### 2. Get the PSN Account ID
+### Sign in to PlayStation Network on your computer
 
-The recommended method is the **sign-in QR code**. It transfers a one-time redirect URL from Chrome to the headset; the extension does not exchange it with Sony.
+This step is required the first time Horizon Stream needs a PSN Account ID:
 
-1. On a computer, open the [Horizon Stream PSN Authenticator](https://chromewebstore.google.com/detail/horizon-stream-psn-authenticator/pcdjngmmgchdmemcacffbmcpedjpgohe) and select its toolbar icon to open its side panel.
-2. In the side panel, select **Open PS Remote Play sign-in** and complete Sony's normal sign-in in Chrome.
-3. Keep the side panel open. When the sign-in tab reaches its final redirect, it captures the redirect and replaces the instructions with a QR code and copyable URL.
-4. In Horizon Stream, select **Scan sign-in QR code**. Allow passthrough-camera access when prompted and look at the QR code.
-5. Horizon Stream validates the redirect and retrieves the Base64 Account ID locally.
+1. On the computer, install and open the [Horizon Stream PSN Authenticator](https://chromewebstore.google.com/detail/horizon-stream-psn-authenticator/pcdjngmmgchdmemcacffbmcpedjpgohe) Chrome extension.
+2. Open its side panel and select **Open PS Remote Play sign-in**.
+3. Complete the normal PlayStation Network sign-in in the Chrome tab. Keep the extension side panel open.
+4. When sign-in reaches the final redirect, the extension displays a one-time QR code.
+5. In the headset, press a controller button to begin scanning and hold the QR code inside the on-screen frame. Horizon Stream validates the redirect and retrieves the Account ID locally.
 
 !!! Warning "Treat the QR code as sensitive"
 
-    The QR code contains the complete one-time redirect URL. Scan it immediately, do not share it, and create a new one if it is expired or already used.
+    The QR code contains a complete one-time redirect URL. Scan it immediately, do not share it, and create a new Chrome sign-in if it is expired or already used. Horizon Stream stores the resulting Account ID in the app so the sign-in QR step is skipped on future onboarding attempts.
 
-#### Other Account-ID methods
+### Link the PlayStation
 
-The same screen also accepts either of these alternatives:
+After the Account ID is ready, the onboarding screen explains how to get the short-lived console code:
 
-- Paste a complete `https://remoteplay.dl.playstation.net/remoteplay/redirect?...` URL and select **Use redirect URL**.
-- Paste an 8-byte Base64 **PSN Account ID** obtained through another method.
+1. On the **PS5**, open `Settings → System → Remote Play`.
+2. If needed, turn on **Enable Remote Play**.
+3. Select **Link Device** and leave the eight-digit code visible.
+4. Press any button on a **Quest controller** when the onboarding screen asks you to scan. This is not a request to press a button on the PS5 controller.
+5. Keep the code in the camera frame. Horizon Stream reads it, confirms the code, and then begins pairing.
 
-Do not enter a PSN password, console PIN, or a two-factor code in the Account ID field.
+Keep the console awake and on the same network while pairing. The Link Device code is temporary; if it expires, retry with a fresh code from the PS5.
 
-### 3. Get the fresh console Link Device code
+### Repeat setup
 
-Only after the Account ID is ready, retrieve the temporary registration code from the console:
+Once the PSN Account ID has been retrieved, Horizon Stream saves it locally. The next time you select an unregistered console, onboarding goes from the welcome screen directly to the PS5 Link Device instructions. You still need a fresh Link Device code for each console registration.
 
-- **PS5:** `Settings → System → Remote Play → Link Device`
-- **PS4:** `Settings → Remote Play Connection Settings → Add Device`
+### Pairing complete
 
-Enter the eight-digit code promptly; it expires quickly. It is not your PSN password or sign-in PIN.
+After pairing succeeds, Horizon Stream shows the Quest controller mappings and explains how to use a DualSense, DualShock 4, or other Bluetooth controller. Press any Quest controller button to connect to the immersive stream.
 
-### 4. Select the console version and register
+The legacy manual registration screen remains available for older consoles and advanced recovery cases. It may ask for a console address and registration values directly.
 
-Select the appropriate console type, then choose **Register & Save**. A pre-7.0 PS4 uses a PSN Online ID instead of a Base64 Account ID.
 
-## Immersive VR Mode (experimental)
+## Immersive VR Mode
 
-Enable **Settings → Quest & VR Hardware → Immersive VR Mode (Experimental)** to present a stream on a head-tracked spatial screen. The immersive path also renders connection errors and console PIN prompts as readable in-headset overlays.
+Enable **Settings → Quest & VR Hardware → Immersive VR Mode** to present a stream on a head-tracked spatial screen. The immersive path also renders connection errors and console PIN prompts as readable in-headset overlays.
 
 Disable it to return to the regular flat streaming view. Start a new connection after changing spatial rendering features so the stream is created with the intended renderer.
 
-## Quest Touch controller emulation (experimental)
+## Quest Touch controller support
 
-Enable **Quest Controller Gamepad Emulation** under **Settings → Quest & VR Hardware**. It automatically enables Immersive VR Mode if needed. During an immersive stream, Horizon Stream maps Quest Touch inputs to a virtual PlayStation controller.
+Enable **Quest Controller Support** under **Settings → Quest & VR Hardware**. It automatically enables Immersive VR Mode if needed. During an immersive stream, Horizon Stream maps Quest Touch inputs to a virtual PlayStation controller.
 
 | Quest input | PlayStation input |
 |---|---|
@@ -114,8 +118,11 @@ AI depth estimation can be less convincing for HUDs, fast cuts, transparency, pa
 
 ## Troubleshooting
 
-- **QR scanner does not show the real world:** grant the headset passthrough-camera permission when the scanner asks. If camera access is unavailable, paste the redirect URL or Base64 Account ID instead.
-- **Redirect URL is rejected or expired:** create a new Chrome sign-in and scan the new QR code only once.
-- **Sony returns an authorization error:** the compatibility sign-in process may have been rejected server-side. Start again with a fresh redirect; Horizon Stream cannot safely bypass a Sony server decision.
-- **Quest controls are not working:** confirm both Immersive VR Mode and Quest Controller Gamepad Emulation are enabled, then begin a new stream. Use a Bluetooth controller as a fallback.
-- **AI depth is flat or visually wrong:** verify AI 2D-to-3D Depth is on before starting the stream, then try a lower strength or turn it off.
+- **No console is discovered:** turn on the PlayStation, enable Remote Play, wake it from standby if necessary, and confirm the Quest and console are on the same local network. Use **Refresh search** on the connections page.
+- **Camera permission is denied:** return to the connections page and choose the unregistered console again, then allow headset-camera access. The camera is needed for both setup scans.
+- **QR scanner does not show the computer screen:** keep the Chrome QR code bright and fully visible, move the computer closer, and keep it inside the blue frame. If the code is stale or already used, complete a new Chrome sign-in and scan the new QR code once.
+- **Sony returns an authorization error:** the compatibility sign-in process may have been rejected server-side. Start again with a fresh Chrome sign-in; Horizon Stream cannot safely bypass a Sony server decision.
+- **The PS5 Link Device code is not detected:** open **Settings → System → Remote Play → Link Device** again, leave the eight-digit code visible, and keep it inside the camera frame. Retry pairing with the fresh code.
+- **Pairing fails:** make sure the PS5 remains awake, Remote Play is enabled, and the code has not expired. Press a Quest controller button to retry the Link Device scan.
+- **Quest controls are not working:** confirm **Immersive VR Mode** and **Quest Controller Support** are enabled, then begin a new stream. Use a Bluetooth controller as a fallback.
+- **AI depth is flat or visually wrong:** verify **AI 2D-to-3D Depth** is on before starting the stream, then try a lower strength or turn it off.

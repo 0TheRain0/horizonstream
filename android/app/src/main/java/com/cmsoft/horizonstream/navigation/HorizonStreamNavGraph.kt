@@ -8,6 +8,7 @@ import com.cmsoft.horizonstream.main.HelpScreen
 import com.cmsoft.horizonstream.main.HomeScreen
 import com.cmsoft.horizonstream.main.MainViewModel
 import com.cmsoft.horizonstream.manual.EditManualConsoleScreen
+import com.cmsoft.horizonstream.manual.ConsoleOnboardingScreen
 import com.cmsoft.horizonstream.settings.SettingsScreen
 
 @Composable
@@ -33,6 +34,13 @@ fun HorizonStreamNavGraph(mainViewModel: MainViewModel) {
                 navController = navController,
                 manualHostId = 0L,
                 prefilledHost = if (host == "null") null else host
+            )
+        }
+        composable("onboard/{host}") { backStackEntry ->
+            val host = backStackEntry.arguments?.getString("host")
+            ConsoleOnboardingScreen(
+                navController = navController,
+                discoveredHost = host?.takeUnless { it == "none" }
             )
         }
         composable("edit_manual_console/{manualHostId}") { backStackEntry ->

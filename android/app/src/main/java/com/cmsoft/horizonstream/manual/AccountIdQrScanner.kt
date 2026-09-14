@@ -179,16 +179,18 @@ private fun QrCameraPreview(
         }
     }
     val mainExecutor = remember { ContextCompat.getMainExecutor(context) }
-    val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
-    val scanner = remember {
-        BarcodeScanning.getClient(
-            BarcodeScannerOptions.Builder()
-                .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
-                .build()
-        )
-    }
     val latestOnTransferScanned by rememberUpdatedState(onTransferScanned)
     val latestOnCameraError by rememberUpdatedState(onCameraError)
+    val scannerResult = remember {
+        runCatching {
+            BarcodeScanning.getClient(
+                BarcodeScannerOptions.Builder()
+                    .setBarcodeFormats(Barcode.FORMAT_QR_CODE)
+                    .build()
+            )
+        }
+    }
+    val scanner = scannerResult.getOrNull()
     val isProcessing = remember { AtomicBoolean(false) }
     val hasCompleted = remember { AtomicBoolean(false) }
 
@@ -197,7 +199,19 @@ private fun QrCameraPreview(
         modifier = Modifier.fillMaxSize()
     )
 
-    DisposableEffect(lifecycleOwner) {
+    LaunchedEffect(scannerResult) {
+        if (scanner == null) {
+            latestOnCameraError(
+                "QR scanning could not start on this headset. Paste the Account ID manually instead."
+            )
+        }
+    }
+
+    if (scanner == null) return
+
+    val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
+
+    DisposableEffect(lifecycleOwner, scanner) {
         val providerFuture = ProcessCameraProvider.getInstance(context)
         var provider: ProcessCameraProvider? = null
         providerFuture.addListener({
