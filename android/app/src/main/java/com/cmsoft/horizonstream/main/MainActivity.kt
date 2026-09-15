@@ -4,12 +4,10 @@ package com.cmsoft.horizonstream.main
 
 import android.content.pm.ActivityInfo
 import android.os.Bundle
-import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.lifecycle.ViewModelProvider
 import com.cmsoft.horizonstream.common.DeviceUtils
-import com.cmsoft.horizonstream.common.ControllerAssignmentLearner
 import com.cmsoft.horizonstream.common.Preferences
 import com.cmsoft.horizonstream.common.ext.viewModelFactory
 import com.cmsoft.horizonstream.common.getDatabase
@@ -58,10 +56,5 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         viewModel.discoveryManager.pause()
-    }
-
-    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-        return ControllerAssignmentLearner.captureKeyEvent(event) ||
-            super.onKeyDown(keyCode, event)
     }
 }

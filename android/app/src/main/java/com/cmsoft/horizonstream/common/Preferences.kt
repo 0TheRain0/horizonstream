@@ -139,6 +139,16 @@ class Preferences(context: Context)
 		get() = sharedPreferences.getBoolean(immersiveVrModeKey, true)
 		set(value) { sharedPreferences.edit().putBoolean(immersiveVrModeKey, value).apply() }
 
+	val curvedViewKey get() = resources.getString(R.string.preferences_curved_view_key)
+	var curvedViewEnabled
+		get() = sharedPreferences.getBoolean(curvedViewKey, true)
+		set(value) { sharedPreferences.edit().putBoolean(curvedViewKey, value).apply() }
+
+	private val immersiveViewScaleKey = "horizonstream.immersive_view_scale"
+	var immersiveViewScale
+		get() = sharedPreferences.getFloat(immersiveViewScaleKey, 1.2f).coerceIn(0.75f, 1.5f)
+		set(value) { sharedPreferences.edit().putFloat(immersiveViewScaleKey, value.coerceIn(0.75f, 1.5f)).apply() }
+
 	val simulated3dEnabledKey get() = resources.getString(R.string.preferences_simulated_3d_enabled_key)
 	var simulated3dEnabled
 		get() = sharedPreferences.getBoolean(simulated3dEnabledKey, false)
@@ -148,16 +158,6 @@ class Preferences(context: Context)
 	var simulated3dIntensity
 		get() = sharedPreferences.getString(simulated3dIntensityKey, "medium") ?: "medium"
 		set(value) { sharedPreferences.edit().putString(simulated3dIntensityKey, value).apply() }
-
-	val streamSettingsButtonBindingKey
-		get() = resources.getString(R.string.preferences_stream_settings_button_binding_key)
-	var streamSettingsButtonBinding: String?
-		get() = sharedPreferences.getString(streamSettingsButtonBindingKey, null)
-		set(value) {
-			sharedPreferences.edit()
-				.putString(streamSettingsButtonBindingKey, value)
-				.apply()
-		}
 
 	/**
 	 * The PSN account ID returned by the Chrome-extension sign-in flow. It is

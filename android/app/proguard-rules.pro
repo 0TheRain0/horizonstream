@@ -32,6 +32,11 @@
 -keep class com.cmsoft.horizonstream.stream.VRStreamActivity { *; }
 -keep class com.cmsoft.horizonstream.depth.DepthAnythingV2Bridge { *; }
 
+# ONNX Runtime's native layer resolves several Java constructors and methods by
+# their original signatures.  R8's optimizer can otherwise leave those lookup
+# IDs null, which aborts the entire process on the first depth-inference frame.
+-keep class ai.onnxruntime.** { *; }
+
 # Room creates the generated database implementation reflectively. R8 removed
 # AppDatabase_Impl's no-argument constructor from the release APK, which made
 # every fresh release install crash before MainActivity could render.

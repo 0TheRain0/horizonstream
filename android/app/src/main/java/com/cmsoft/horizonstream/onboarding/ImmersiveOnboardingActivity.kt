@@ -107,6 +107,7 @@ class ImmersiveOnboardingActivity : ComponentActivity() {
     private var manualHostId: Long? = null
     private var pairingFailed = false
     private var streamLaunchScheduled = false
+    private var onboardingVrStarted = false
     private var onboardingVrStopped = false
     private var previousButtons = 0
     private var scanning = false
@@ -142,7 +143,17 @@ class ImmersiveOnboardingActivity : ComponentActivity() {
     }
     override fun onResume() {
         super.onResume()
+        if (onboardingVrStarted) {
+            // Returning from Android's permission sheet must not try to create
+            // a second OpenXR session. Restart a scan only after the user has
+            // granted headset-camera permission.
+            if ((page == QR_PAGE || page == LINK_PAGE) && !scanning && hasCameraPermissions()) {
+                if (page == QR_PAGE) beginQrScan() else beginCodeScan()
+            }
+            return
+        }
         if (nativeInitOnboardingVR(this) != null) {
+            onboardingVrStarted = true
             draw()
             nativeSetOnboardingHeadLocked(isHeadLockedPage())
             nativeStartOnboardingRenderLoop()
@@ -218,6 +229,7 @@ class ImmersiveOnboardingActivity : ComponentActivity() {
         scanCompleted.set(true)
         qrFrameInFlight.set(false)
         codeFrameInFlight.set(false)
+        scanning = false
         synchronized(previewLock) { cameraFrame = null }
         val providerFuture = ProcessCameraProvider.getInstance(this)
         providerFuture.addListener({ runCatching { providerFuture.get().unbindAll() } }, ContextCompat.getMainExecutor(this))
@@ -244,9 +256,45 @@ class ImmersiveOnboardingActivity : ComponentActivity() {
         linkDeviceCode = null
         showPage(LINK_PAGE)
     }
+
+    private fun passthroughCameraSelector(provider: ProcessCameraProvider): CameraSelector {
+        val sourceKey = CameraCharacteristics.Key(
+            "com.meta.extra_metadata.camera_source",
+            Int::class.javaObjectType
+        )
+        val positionKey = CameraCharacteristics.Key(
+            "com.meta.extra_metadata.position",
+            Int::class.javaObjectType
+        )
+        val leftCameraSelector = CameraSelector.Builder()
+            .addCameraFilter { infos ->
+                infos.filter {
+                    runCatching {
+                        val info = Camera2CameraInfo.from(it)
+                        info.getCameraCharacteristic(sourceKey) == 0 &&
+                            info.getCameraCharacteristic(positionKey) == 0
+                    }.getOrDefault(false)
+                }
+            }
+            .build()
+        if (provider.hasCamera(leftCameraSelector)) return leftCameraSelector
+        // Older firmware may not surface the position vendor tag; never fall
+        // back to an avatar camera, only to another passthrough RGB camera.
+        val passthroughSelector = CameraSelector.Builder()
+            .addCameraFilter { infos -> infos.filter {
+                runCatching {
+                    Camera2CameraInfo.from(it).getCameraCharacteristic(sourceKey) == 0
+                }.getOrDefault(false)
+            } }
+            .build()
+        if (provider.hasCamera(passthroughSelector)) return passthroughSelector
+        throw IllegalStateException("No Meta passthrough camera is available")
+    }
+
     private fun beginQrScan() {
-        if (ContextCompat.checkSelfPermission(this, HEADSET_CAMERA_PERMISSION) != PackageManager.PERMISSION_GRANTED) {
-            scanStatus = "Allow headset-camera access to scan the QR code."; requestPermissions(arrayOf(HEADSET_CAMERA_PERMISSION), CAMERA_REQUEST); draw(); return
+        if (scanning) return
+        if (!hasCameraPermissions()) {
+            scanStatus = "Allow camera access to scan the QR code."; requestPermissions(cameraPermissions, CAMERA_REQUEST); draw(); return
         }
         val barcodeScanner = qrScannerOrNull() ?: run {
             scanning = false
@@ -287,18 +335,22 @@ class ImmersiveOnboardingActivity : ComponentActivity() {
                             }
                         }.addOnCompleteListener { qrFrameInFlight.set(false); image.close() }
                 }
-                val sourceKey = CameraCharacteristics.Key("com.meta.extra_metadata.camera_source", Int::class.javaObjectType)
-                val selector = CameraSelector.Builder().addCameraFilter { infos -> infos.filter { info -> runCatching { Camera2CameraInfo.from(info).getCameraCharacteristic(sourceKey) == 0 }.getOrDefault(false) } }.build()
+                val selector = passthroughCameraSelector(provider)
                 provider.unbindAll(); provider.bindToLifecycle(this, selector, analysis)
-            }.onFailure { scanStatus = "Camera unavailable. Check permission, then try again."; scanning = false; draw() }
+            }.onFailure { error ->
+                Log.e(TAG, "Unable to bind the passthrough camera for QR scanning", error)
+                scanStatus = cameraUnavailableMessage(error)
+                scanning = false
+                draw()
+            }
         }, ContextCompat.getMainExecutor(this))
     }
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grants: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grants)
-        if (requestCode == CAMERA_REQUEST && grants.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+        if (requestCode == CAMERA_REQUEST && hasCameraPermissions()) {
             if (page == LINK_PAGE) beginCodeScan() else beginQrScan()
         } else {
-            scanStatus = "Camera access is needed for scanning."
+            scanStatus = "Headset camera access is needed for scanning. Allow it in Quest settings."
             scanning = false
             draw()
         }
@@ -326,7 +378,8 @@ class ImmersiveOnboardingActivity : ComponentActivity() {
         }
     }
     private fun beginCodeScan() {
-        if (ContextCompat.checkSelfPermission(this, HEADSET_CAMERA_PERMISSION) != PackageManager.PERMISSION_GRANTED) { requestPermissions(arrayOf(HEADSET_CAMERA_PERMISSION), CAMERA_REQUEST); return }
+        if (scanning) return
+        if (!hasCameraPermissions()) { scanStatus = "Allow camera access to scan the Link Device code."; requestPermissions(cameraPermissions, CAMERA_REQUEST); draw(); return }
         val recognizer = textRecognizerOrNull() ?: run {
             scanning = false
             scanStatus = "Link Device scanning could not start. Restart setup and try again."
@@ -373,8 +426,27 @@ class ImmersiveOnboardingActivity : ComponentActivity() {
                     }
                 }.addOnCompleteListener { codeFrameInFlight.set(false); image.close() }
             }
-            val key = CameraCharacteristics.Key("com.meta.extra_metadata.camera_source", Int::class.javaObjectType); val selector=CameraSelector.Builder().addCameraFilter { infos -> infos.filter { runCatching { Camera2CameraInfo.from(it).getCameraCharacteristic(key) == 0 }.getOrDefault(false) } }.build(); provider.unbindAll(); provider.bindToLifecycle(this,selector,analysis)
-        }.onFailure { scanning=false; scanStatus="Camera unavailable. Try again."; draw() } }, ContextCompat.getMainExecutor(this))
+            val selector = passthroughCameraSelector(provider); provider.unbindAll(); provider.bindToLifecycle(this,selector,analysis)
+        }.onFailure { error ->
+            Log.e(TAG, "Unable to bind the passthrough camera for Link Device scanning", error)
+            scanning = false
+            scanStatus = cameraUnavailableMessage(error)
+            draw()
+        } }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun hasCameraPermissions(): Boolean = cameraPermissions.all {
+        ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun cameraUnavailableMessage(error: Throwable): String {
+        val message = error.message.orEmpty()
+        return if (message.contains("No Meta passthrough camera", ignoreCase = true) ||
+            message.contains("no camera", ignoreCase = true)) {
+            "This headset does not expose a passthrough camera to apps. Quest 2 cannot scan setup codes; use a Quest 3 or Quest 3S, or return to the main screen and use manual setup."
+        } else {
+            "The headset camera could not start. Confirm headset camera access is allowed, then try setup again."
+        }
     }
 
     private fun beginPairing() {
@@ -628,5 +700,6 @@ class ImmersiveOnboardingActivity : ComponentActivity() {
         private const val PREVIEW_BYTE_COUNT=PREVIEW_SIZE * PREVIEW_SIZE * 4
         private const val PREVIEW_INTERVAL_MS=80L
         const val HEADSET_CAMERA_PERMISSION="horizonos.permission.HEADSET_CAMERA"
+        val cameraPermissions = arrayOf(HEADSET_CAMERA_PERMISSION)
     }
 }

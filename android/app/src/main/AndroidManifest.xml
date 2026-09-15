@@ -28,6 +28,9 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" />
+    <!-- HEADSET_CAMERA is passthrough-only. Do not request Android's broad
+         CAMERA permission: it may expose an avatar/virtual camera instead of
+         the forward-facing RGB cameras used for setup-code scanning. -->
     <uses-permission android:name="horizonos.permission.HEADSET_CAMERA" />
     <uses-permission android:name="com.oculus.permission.HAND_TRACKING" />
 

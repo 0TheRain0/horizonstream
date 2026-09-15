@@ -15,10 +15,25 @@ import com.cmsoft.horizonstream.lib.ControllerState
 class StreamInput(val context: Context, val preferences: Preferences)
 {
 	var controllerStateChangedCallback: ((ControllerState) -> Unit)? = null
+	/**
+	 * Lets a modal stream UI consume a physical-controller update before it is
+	 * forwarded to Remote Play. This is used by the immersive controls so a
+	 * paired Bluetooth gamepad can navigate them without also operating the
+	 * game behind the panel.
+	 */
+	var controllerStateInterceptor: ((ControllerState, Boolean) -> Boolean)? = null
+	@Volatile
+	var suppressedPhysicalButtons: UInt = 0U
 
-	val controllerState: ControllerState get()
+	val controllerState: ControllerState get() = combinedControllerState(false)
+
+	private fun combinedControllerState(suppressPhysicalButtons: Boolean): ControllerState
 	{
 		val controllerState = sensorControllerState or keyControllerState or motionControllerState
+		if(suppressPhysicalButtons) {
+			controllerState.buttons = controllerState.buttons and
+				suppressedPhysicalButtons.inv()
+		}
 
 		val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 		@Suppress("DEPRECATION")
@@ -124,9 +139,12 @@ class StreamInput(val context: Context, val preferences: Preferences)
 			lifecycleOwner.lifecycle.addObserver(motionLifecycleObserver)
 	}
 
-	private fun controllerStateUpdated()
+	private fun controllerStateUpdated(isQuestInput: Boolean = false)
 	{
-		controllerStateChangedCallback?.let { it(controllerState) }
+		val rawState = controllerState
+		if(controllerStateInterceptor?.invoke(rawState, isQuestInput) == true)
+			return
+		controllerStateChangedCallback?.let { it(combinedControllerState(true)) }
 	}
 
 	fun dispatchKeyEvent(event: KeyEvent): Boolean
@@ -186,7 +204,14 @@ class StreamInput(val context: Context, val preferences: Preferences)
 
 	fun onGenericMotionEvent(event: MotionEvent): Boolean
 	{
-		if (!event.isFromSource(InputDevice.SOURCE_JOYSTICK))
+		// Android gamepads do not all report the complete SOURCE_JOYSTICK
+		// value.  In particular, Bluetooth HID controllers on Horizon OS can
+		// expose only the joystick source class (with no source-id bits).  The
+		// old flat streaming path accepted that form; keep doing so here so a
+		// DualSense remains usable while the immersive Quest actions are active.
+		val joystickSource = event.source and InputDevice.SOURCE_CLASS_JOYSTICK ==
+			InputDevice.SOURCE_CLASS_JOYSTICK
+		if(!joystickSource && !event.isFromSource(InputDevice.SOURCE_GAMEPAD))
 			return false
 
 		fun axis(axis: Int, fallbackAxis: Int? = null): Float {
@@ -237,8 +262,17 @@ class StreamInput(val context: Context, val preferences: Preferences)
 		rightGrip: Float,
 		buttons: UInt
 	) {
-		if(!preferences.questControllerEmulationEnabled)
+		if(!preferences.questControllerEmulationEnabled) {
+			// The setting can be changed from the flat settings screen while an
+			// immersive activity is still alive.  Do not leave a held Quest button
+			// or stick value in the combined state after emulation is disabled.
+			if(questControllerState != ControllerState() || pulsedQuestButtons != 0U) {
+				questControllerState = ControllerState()
+				pulsedQuestButtons = 0U
+				controllerStateUpdated(isQuestInput = true)
+			}
 			return
+		}
 
 		fun Float.stickAxis(invert: Boolean = false): Short {
 			val deadzoned = if(kotlin.math.abs(this) < 0.12f) 0f else this
@@ -292,23 +326,23 @@ class StreamInput(val context: Context, val preferences: Preferences)
 		)
 		if(nextState != questControllerState) {
 			questControllerState = nextState
-			controllerStateUpdated()
+			controllerStateUpdated(isQuestInput = true)
 		}
 	}
 
 	@Synchronized
-	fun pulseQuestControllerButton(button: UInt) {
-		if(!preferences.questControllerEmulationEnabled || button == 0U ||
+	fun pulseQuestControllerButton(button: UInt, force: Boolean = false) {
+		if((!force && !preferences.questControllerEmulationEnabled) || button == 0U ||
 			questControllerState.buttons and button != 0U ||
 			pulsedQuestButtons and button != 0U)
 			return
 
 		pulsedQuestButtons = pulsedQuestButtons or button
-		controllerStateUpdated()
+		controllerStateUpdated(isQuestInput = true)
 		questButtonPulseHandler.postDelayed({
 			synchronized(this) {
 				pulsedQuestButtons = pulsedQuestButtons and button.inv()
-				controllerStateUpdated()
+				controllerStateUpdated(isQuestInput = true)
 			}
 		}, 120L)
 	}

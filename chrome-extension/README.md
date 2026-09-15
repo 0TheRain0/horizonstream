@@ -9,7 +9,7 @@ For normal installation, install **Horizon Stream PSN Authenticator** from the [
 1. Select the **Horizon Stream PSN Authenticator** toolbar icon to open its persistent **side panel**.
 2. In the side panel, select **Open PS Remote Play sign-in** and complete Sony's normal sign-in in the new Chrome tab. Keep the panel open beside that tab.
 3. When the sign-in tab reaches `https://remoteplay.dl.playstation.net/remoteplay/redirect?...`, the panel automatically changes to the QR and complete redirect URL. No copying or pasting is needed for Horizon Stream.
-4. In Horizon Stream, choose **Scan sign-in QR code** and look at the QR code through the headset. Horizon Stream completes the Account-ID lookup on the Quest. To use the captured result with any other PS Remote Play client that accepts a sign-in redirect URL, copy the plain-text URL instead.
+4. On Quest 3/3S, choose **Scan sign-in QR code** in Horizon Stream and look at the QR code through the headset. Horizon Stream completes the Account-ID lookup on the Quest. On Quest 2 or Quest Pro, camera scanning is unavailable by headset design: choose **QR scanning isn't working** → **Advanced setup** in Horizon Stream and paste the copied redirect URL into **PS Remote Play redirect URL** instead. Other compatible clients can also use the copied URL.
 
 The extension does not inspect browser cookies, page content, or passwords, and it does not call Sony. It observes only the top-level final redirect in the exact sign-in tab it opened. Nothing is sent to a relay service, and data is not saved after the browser session closes. The QR code itself contains the one-time redirect URL, so scan it immediately and do not show it to anyone else.
 

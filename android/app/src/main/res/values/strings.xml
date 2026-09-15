@@ -97,29 +97,27 @@
 
     <string name="preferences_category_title_quest_vr">Quest &amp; VR Hardware</string>
     <string name="preferences_quest_controller_emulation_title">Quest Controller Support</string>
-    <string name="preferences_quest_controller_emulation_summary">Map Touch controls to PS5; double-tap Menu is PS, Menu+X is Share, Menu+Y is PS, Menu+L3 is touchpad, and left grip+stick is D-pad</string>
+    <string name="preferences_quest_controller_emulation_summary">Use Quest Touch controllers as a PS5 controller in immersive mode. A Bluetooth DualSense, DualShock 4, or other supported gamepad can still be used at the same time.</string>
     <string name="preferences_immersive_vr_mode_title">Immersive VR Mode</string>
     <string name="preferences_immersive_vr_mode_summary">Present the stream on a head-tracked spatial screen</string>
+    <string name="preferences_curved_view_title">Curved immersive screen</string>
+    <string name="preferences_curved_view_summary">Wrap the stream slightly around you in Immersive VR Mode</string>
+    <string name="preferences_curved_view_key" translatable="false">curved_view</string>
 
     <string name="preferences_category_title_spatial_3d">Spatial 3D Rendering</string>
-    <string name="preferences_simulated_3d_enabled_title">AI 2D-to-3D Depth (Experimental)</string>
+    <string name="preferences_simulated_3d_enabled_title">AI 2D-to-3D Depth</string>
     <string name="preferences_simulated_3d_enabled_summary">Uses Depth Anything V2 to infer spatial depth from the 2D game stream asynchronously</string>
     <string name="preferences_simulated_3d_intensity_title">AI Depth Strength</string>
     <string name="preferences_simulated_3d_intensity_low">Comfort</string>
     <string name="preferences_simulated_3d_intensity_medium">Balanced</string>
     <string name="preferences_simulated_3d_intensity_high">Enhanced</string>
     <string name="preferences_simulated_3d_intensity_strong">Strong</string>
-    <string name="preferences_stream_settings_button_binding_key" translatable="false">stream_settings_button_binding</string>
-    <string name="preferences_stream_settings_button_title">Exit Stream Button</string>
-    <string name="preferences_stream_settings_button_summary">Assigned button: %1$s. Select to learn a different exit button. Long-press Quest Menu always exits the stream and cannot be changed.</string>
-    <string name="preferences_stream_settings_button_learning">Press a controller button to assign it to exit the stream…</string>
     <string name="stream_settings_title">Stream Settings</string>
-    <string name="stream_settings_spatial_restart">AI 2D-to-3D (Experimental): %1$s (next connection)</string>
+    <string name="stream_settings_spatial_restart">AI 2D-to-3D: %1$s</string>
+    <string name="stream_settings_curved_view">Curved immersive screen: %1$s</string>
+    <string name="stream_settings_screen_size">Screen size: %1$s</string>
     <string name="stream_settings_depth">AI depth strength: %1$s</string>
-    <string name="stream_settings_assignment">Exit-stream button: %1$s</string>
-    <string name="stream_settings_learn">Learn exit-stream button</string>
-    <string name="quest_menu_exit_hint">Long-press the Quest Menu button to exit the stream</string>
-    <string name="action_clear_assignment">Clear assignment</string>
+    <string name="quest_menu_exit_hint">Long-press Menu / Options for immersive stream controls</string>
 
     <string name="alert_message_delete_registered_host">Are you sure you want to delete the registered console %s with ID %s?</string>
     <string name="alert_message_delete_manual_host">Are you sure you want to delete the console entry for %s?</string>

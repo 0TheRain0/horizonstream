@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <atomic>
+#include <cmath>
 #include <mutex>
 #include <vector>
 #include <EGL/egl.h>
@@ -43,6 +44,8 @@ static PFN_xrWaitSwapchainImage g_pfnWaitSwapchainImage = NULL;
 static PFN_xrReleaseSwapchainImage g_pfnReleaseSwapchainImage = NULL;
 static PFN_xrDestroySwapchain g_pfnDestroySwapchain = NULL;
 static PFN_xrDestroySpace g_pfnDestroySpace = NULL;
+static PFN_xrCreateActionSpace g_pfnCreateActionSpace = NULL;
+static PFN_xrLocateSpace g_pfnLocateSpace = NULL;
 static PFN_xrDestroyActionSet g_pfnDestroyActionSet = NULL;
 static PFN_xrStringToPath g_pfnStringToPath = NULL;
 static PFN_xrCreateActionSet g_pfnCreateActionSet = NULL;
@@ -63,6 +66,10 @@ static XrSwapchain g_xrSwapchain = XR_NULL_HANDLE;
 static XrSwapchain g_rightEyeSwapchain = XR_NULL_HANDLE;
 static XrSwapchain g_onboardingAuraSwapchain = XR_NULL_HANDLE;
 static XrSpace g_appSpace = XR_NULL_HANDLE;
+// VIEW is used only to sample the headset pose when the user recenters.  The
+// stream itself remains in LOCAL space so it stays put while the user looks
+// around after the recenter operation.
+static XrSpace g_streamViewSpace = XR_NULL_HANDLE;
 static XrSpace g_onboardingViewSpace = XR_NULL_HANDLE;
 static bool g_xrInitialized = false;
 static bool g_xrSessionRunning = false;
@@ -76,11 +83,14 @@ static bool g_loggedRenderPrerequisiteFailure = false;
 static bool g_loggedSurfaceTextureFailure = false;
 static int32_t g_streamWidth = 1280;
 static int32_t g_streamHeight = 720;
-static bool g_stereoConversionEnabled = false;
-static float g_stereoDepthIntensity = 0.015f;
+// These can change from the in-world settings menu while the render thread is
+// active, so keep them atomic rather than requiring a VR-session restart.
+static std::atomic<bool> g_stereoConversionEnabled(false);
+static std::atomic<float> g_stereoDepthIntensity(0.015f);
 static JavaVM* g_javaVm = NULL;
 static jobject g_activityObject = NULL;
 static jmethodID g_controllerStateMethod = NULL;
+static jmethodID g_controllerPointerMethod = NULL;
 static jobject g_surfaceTextureObject = NULL;
 static jmethodID g_updateTexImageMethod = NULL;
 static jmethodID g_getTransformMatrixMethod = NULL;
@@ -98,9 +108,19 @@ static XrAction g_bAction = XR_NULL_HANDLE;
 static XrAction g_xAction = XR_NULL_HANDLE;
 static XrAction g_yAction = XR_NULL_HANDLE;
 static XrAction g_menuAction = XR_NULL_HANDLE;
+static XrAction g_aimPoseAction = XR_NULL_HANDLE;
 static XrPath g_leftHandPath = XR_NULL_PATH;
 static XrPath g_rightHandPath = XR_NULL_PATH;
+static XrSpace g_leftAimSpace = XR_NULL_HANDLE;
+static XrSpace g_rightAimSpace = XR_NULL_HANDLE;
 static bool g_metaTouchPlusEnabled = false;
+static bool g_compositionCylinderEnabled = false;
+static std::atomic<bool> g_curvedViewEnabled(false);
+static std::atomic<float> g_immersiveViewScale(1.0f);
+static std::atomic<bool> g_recenterRequested(false);
+static XrPosef g_streamLayerPose = {};
+static bool g_streamLayerPoseValid = false;
+static XrVector3f g_lastHorizontalForward = { 0.0f, 0.0f, -1.0f };
 
 static EGLDisplay g_eglDisplay = EGL_NO_DISPLAY;
 static EGLConfig g_eglConfig = NULL;
@@ -138,6 +158,7 @@ static constexpr int32_t DEPTH_INPUT_WIDTH = 322;
 static constexpr int32_t DEPTH_INPUT_HEIGHT = 182;
 static GLuint g_settingsProgram = 0;
 static GLuint g_settingsTexture = 0;
+static GLuint g_immersivePointerTexture = 0;
 static GLint g_settingsPositionLocation = -1;
 static GLint g_settingsTextureCoordLocation = -1;
 static std::mutex g_settingsOverlayMutex;
@@ -146,6 +167,11 @@ static int32_t g_settingsOverlayWidth = 0;
 static int32_t g_settingsOverlayHeight = 0;
 static bool g_settingsOverlayVisible = false;
 static bool g_settingsOverlayDirty = false;
+static std::atomic<bool> g_immersivePointerEnabled(false);
+static std::atomic<bool> g_immersivePointerActive(false);
+static std::atomic<bool> g_immersivePointerPressed(false);
+static std::atomic<float> g_immersivePointerX(0.5f);
+static std::atomic<float> g_immersivePointerY(0.5f);
 static bool g_onboardingMode = false;
 static std::atomic<bool> g_onboardingHeadLocked(false);
 static std::mutex g_onboardingCameraMutex;
@@ -197,7 +223,8 @@ static bool createAction(
 
 static bool initControllerActions() {
     if (!g_pfnStringToPath || !g_pfnCreateActionSet || !g_pfnCreateAction ||
-        !g_pfnSuggestInteractionProfileBindings || !g_pfnAttachSessionActionSets) {
+        !g_pfnSuggestInteractionProfileBindings || !g_pfnAttachSessionActionSets ||
+        !g_pfnCreateActionSpace) {
         LOGE("Required OpenXR action functions are unavailable.");
         return false;
     }
@@ -231,7 +258,8 @@ static bool initControllerActions() {
         createAction(&g_bAction, XR_ACTION_TYPE_BOOLEAN_INPUT, "b_button", "Circle", hands, 2) &&
         createAction(&g_xAction, XR_ACTION_TYPE_BOOLEAN_INPUT, "x_button", "Square", hands, 2) &&
         createAction(&g_yAction, XR_ACTION_TYPE_BOOLEAN_INPUT, "y_button", "Triangle", hands, 2) &&
-        createAction(&g_menuAction, XR_ACTION_TYPE_BOOLEAN_INPUT, "menu_button", "Options", hands, 2);
+        createAction(&g_menuAction, XR_ACTION_TYPE_BOOLEAN_INPUT, "menu_button", "Options", hands, 2) &&
+        createAction(&g_aimPoseAction, XR_ACTION_TYPE_POSE_INPUT, "aim_pose", "Pointer Aim", hands, 2);
     if (!created)
         return false;
 
@@ -250,6 +278,8 @@ static bool initControllerActions() {
         { g_yAction, xrPath("/user/hand/left/input/y/click") },
         { g_menuAction, xrPath("/user/hand/left/input/menu/click") },
         { g_menuAction, xrPath("/user/hand/right/input/system/click") },
+        { g_aimPoseAction, xrPath("/user/hand/left/input/aim/pose") },
+        { g_aimPoseAction, xrPath("/user/hand/right/input/aim/pose") },
     };
     XrInteractionProfileSuggestedBinding suggested = {
         XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING
@@ -259,8 +289,30 @@ static bool initControllerActions() {
     suggested.suggestedBindings = bindings;
     result = g_pfnSuggestInteractionProfileBindings(g_xrInstance, &suggested);
     if (XR_FAILED(result)) {
-        LOGE("Touch controller binding suggestion failed: %d", result);
-        return false;
+        LOGW("Touch pointer pose binding was rejected (%d); retrying gameplay bindings without it.", result);
+        XrActionSuggestedBinding gameplayBindings[] = {
+            { g_triggerAction, xrPath("/user/hand/left/input/trigger/value") },
+            { g_triggerAction, xrPath("/user/hand/right/input/trigger/value") },
+            { g_squeezeAction, xrPath("/user/hand/left/input/squeeze/value") },
+            { g_squeezeAction, xrPath("/user/hand/right/input/squeeze/value") },
+            { g_thumbstickAction, xrPath("/user/hand/left/input/thumbstick") },
+            { g_thumbstickAction, xrPath("/user/hand/right/input/thumbstick") },
+            { g_thumbstickClickAction, xrPath("/user/hand/left/input/thumbstick/click") },
+            { g_thumbstickClickAction, xrPath("/user/hand/right/input/thumbstick/click") },
+            { g_aAction, xrPath("/user/hand/right/input/a/click") },
+            { g_bAction, xrPath("/user/hand/right/input/b/click") },
+            { g_xAction, xrPath("/user/hand/left/input/x/click") },
+            { g_yAction, xrPath("/user/hand/left/input/y/click") },
+            { g_menuAction, xrPath("/user/hand/left/input/menu/click") },
+            { g_menuAction, xrPath("/user/hand/right/input/system/click") },
+        };
+        suggested.countSuggestedBindings = sizeof(gameplayBindings) / sizeof(gameplayBindings[0]);
+        suggested.suggestedBindings = gameplayBindings;
+        result = g_pfnSuggestInteractionProfileBindings(g_xrInstance, &suggested);
+        if (XR_FAILED(result)) {
+            LOGE("Touch controller binding suggestion failed: %d", result);
+            return false;
+        }
     }
 
     // Quest 3/3S Touch Plus controllers expose the same semantic paths under
@@ -274,8 +326,26 @@ static bool initControllerActions() {
     };
     touchPlus.interactionProfile = xrPath(
         "/interaction_profiles/meta/touch_controller_plus");
-    touchPlus.countSuggestedBindings = sizeof(bindings) / sizeof(bindings[0]);
-    touchPlus.suggestedBindings = bindings;
+    XrActionSuggestedBinding touchPlusBindings[] = {
+        { g_triggerAction, xrPath("/user/hand/left/input/trigger/value") },
+        { g_triggerAction, xrPath("/user/hand/right/input/trigger/value") },
+        { g_squeezeAction, xrPath("/user/hand/left/input/squeeze/value") },
+        { g_squeezeAction, xrPath("/user/hand/right/input/squeeze/value") },
+        { g_thumbstickAction, xrPath("/user/hand/left/input/thumbstick") },
+        { g_thumbstickAction, xrPath("/user/hand/right/input/thumbstick") },
+        { g_thumbstickClickAction, xrPath("/user/hand/left/input/thumbstick/click") },
+        { g_thumbstickClickAction, xrPath("/user/hand/right/input/thumbstick/click") },
+        { g_aAction, xrPath("/user/hand/right/input/a/click") },
+        { g_bAction, xrPath("/user/hand/right/input/b/click") },
+        { g_xAction, xrPath("/user/hand/left/input/x/click") },
+        { g_yAction, xrPath("/user/hand/left/input/y/click") },
+        { g_menuAction, xrPath("/user/hand/left/input/menu/click") },
+        { g_menuAction, xrPath("/user/hand/right/input/system/click") },
+        { g_aimPoseAction, xrPath("/user/hand/left/input/aim/pose") },
+        { g_aimPoseAction, xrPath("/user/hand/right/input/aim/pose") },
+    };
+    touchPlus.countSuggestedBindings = sizeof(touchPlusBindings) / sizeof(touchPlusBindings[0]);
+    touchPlus.suggestedBindings = touchPlusBindings;
     XrResult touchPlusResult = g_pfnSuggestInteractionProfileBindings(
         g_xrInstance, &touchPlus);
     LOGI("Touch Plus binding suggestion result: %d.", touchPlusResult);
@@ -289,6 +359,23 @@ static bool initControllerActions() {
     if (XR_FAILED(result)) {
         LOGE("xrAttachSessionActionSets failed: %d", result);
         return false;
+    }
+
+    XrActionSpaceCreateInfo leftSpaceInfo = { XR_TYPE_ACTION_SPACE_CREATE_INFO };
+    leftSpaceInfo.action = g_aimPoseAction;
+    leftSpaceInfo.subactionPath = g_leftHandPath;
+    leftSpaceInfo.poseInActionSpace.orientation.w = 1.0f;
+    if (XR_FAILED(g_pfnCreateActionSpace(g_xrSession, &leftSpaceInfo, &g_leftAimSpace))) {
+        LOGW("Unable to create the left Quest pointer space.");
+        g_leftAimSpace = XR_NULL_HANDLE;
+    }
+    XrActionSpaceCreateInfo rightSpaceInfo = { XR_TYPE_ACTION_SPACE_CREATE_INFO };
+    rightSpaceInfo.action = g_aimPoseAction;
+    rightSpaceInfo.subactionPath = g_rightHandPath;
+    rightSpaceInfo.poseInActionSpace.orientation.w = 1.0f;
+    if (XR_FAILED(g_pfnCreateActionSpace(g_xrSession, &rightSpaceInfo, &g_rightAimSpace))) {
+        LOGW("Unable to create the right Quest pointer space.");
+        g_rightAimSpace = XR_NULL_HANDLE;
     }
     g_controllerSampleCount = 0;
     g_controllerSyncFailureCount = 0;
@@ -324,7 +411,224 @@ static bool getBooleanAction(XrAction action, XrPath hand = XR_NULL_PATH) {
            state.isActive && state.currentState;
 }
 
-static void updateControllerState(JNIEnv* env) {
+static XrVector3f addVector(XrVector3f a, XrVector3f b) {
+    return { a.x + b.x, a.y + b.y, a.z + b.z };
+}
+
+static XrVector3f subtractVector(XrVector3f a, XrVector3f b) {
+    return { a.x - b.x, a.y - b.y, a.z - b.z };
+}
+
+static XrVector3f scaleVector(XrVector3f value, float scale) {
+    return { value.x * scale, value.y * scale, value.z * scale };
+}
+
+static float dotVector(XrVector3f a, XrVector3f b) {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+static XrVector3f crossVector(XrVector3f a, XrVector3f b) {
+    return {
+        a.y * b.z - a.z * b.y,
+        a.z * b.x - a.x * b.z,
+        a.x * b.y - a.y * b.x
+    };
+}
+
+static XrVector3f normalizeVector(XrVector3f value) {
+    const float length = std::sqrt(dotVector(value, value));
+    if (length < 0.0001f)
+        return { 0.0f, 0.0f, 0.0f };
+    return scaleVector(value, 1.0f / length);
+}
+
+static XrVector3f rotateVector(XrQuaternionf q, XrVector3f value) {
+    const XrVector3f quaternionVector = { q.x, q.y, q.z };
+    const XrVector3f t = scaleVector(crossVector(quaternionVector, value), 2.0f);
+    return addVector(
+        value,
+        addVector(scaleVector(t, q.w), crossVector(quaternionVector, t)));
+}
+
+// Builds a rotation whose local -Z axis points along the user's gaze while
+// keeping its local +Y axis aligned to world up.  This is the OpenXR
+// equivalent of Sunset's Quaternion.lookRotation(stableForward, Vector3.Up):
+// vertical pitch is retained, but head roll never tilts the screen.
+static XrQuaternionf quaternionFromGaze(XrVector3f gazeForward) {
+    XrVector3f horizontal = {
+        gazeForward.x,
+        0.0f,
+        gazeForward.z
+    };
+    const float horizontalLength = std::sqrt(dotVector(horizontal, horizontal));
+    if (horizontalLength >= 0.02f) {
+        g_lastHorizontalForward = scaleVector(horizontal, 1.0f / horizontalLength);
+    } else {
+        horizontal = scaleVector(g_lastHorizontalForward, 0.02f);
+        gazeForward = normalizeVector(addVector(horizontal, { 0.0f, gazeForward.y, 0.0f }));
+    }
+
+    const XrVector3f worldUp = { 0.0f, 1.0f, 0.0f };
+    // For a default gaze of (0, 0, -1), these produce the identity basis.
+    const XrVector3f right = normalizeVector(crossVector(gazeForward, worldUp));
+    const XrVector3f up = normalizeVector(crossVector(right, gazeForward));
+    const XrVector3f back = scaleVector(gazeForward, -1.0f);
+
+    // Rotation matrix columns are the panel's local right, up, and back axes.
+    const float m00 = right.x, m01 = up.x, m02 = back.x;
+    const float m10 = right.y, m11 = up.y, m12 = back.y;
+    const float m20 = right.z, m21 = up.z, m22 = back.z;
+    XrQuaternionf result = { 0.0f, 0.0f, 0.0f, 1.0f };
+    const float trace = m00 + m11 + m22;
+    if (trace > 0.0f) {
+        const float s = std::sqrt(trace + 1.0f) * 2.0f;
+        result.w = 0.25f * s;
+        result.x = (m21 - m12) / s;
+        result.y = (m02 - m20) / s;
+        result.z = (m10 - m01) / s;
+    } else if (m00 > m11 && m00 > m22) {
+        const float s = std::sqrt(1.0f + m00 - m11 - m22) * 2.0f;
+        result.w = (m21 - m12) / s;
+        result.x = 0.25f * s;
+        result.y = (m01 + m10) / s;
+        result.z = (m02 + m20) / s;
+    } else if (m11 > m22) {
+        const float s = std::sqrt(1.0f + m11 - m00 - m22) * 2.0f;
+        result.w = (m02 - m20) / s;
+        result.x = (m01 + m10) / s;
+        result.y = 0.25f * s;
+        result.z = (m12 + m21) / s;
+    } else {
+        const float s = std::sqrt(1.0f + m22 - m00 - m11) * 2.0f;
+        result.w = (m10 - m01) / s;
+        result.x = (m02 + m20) / s;
+        result.y = (m12 + m21) / s;
+        result.z = 0.25f * s;
+    }
+    return result;
+}
+
+static bool updateStreamLayerPose(XrTime displayTime) {
+    if (g_onboardingMode || g_streamViewSpace == XR_NULL_HANDLE ||
+        !g_pfnLocateSpace || g_appSpace == XR_NULL_HANDLE)
+        return false;
+
+    XrSpaceLocation headLocation = { XR_TYPE_SPACE_LOCATION };
+    if (XR_FAILED(g_pfnLocateSpace(
+            g_streamViewSpace, g_appSpace, displayTime, &headLocation)) ||
+        (headLocation.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) == 0 ||
+        (headLocation.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT) == 0) {
+        return false;
+    }
+
+    XrVector3f forward = rotateVector(
+        headLocation.pose.orientation,
+        { 0.0f, 0.0f, -1.0f });
+    forward = normalizeVector(forward);
+    if (dotVector(forward, forward) < 0.5f)
+        return false;
+
+    // Match the Sunset client: put the panel on the current full gaze ray,
+    // slightly below eye level, then leave it fixed in LOCAL space.
+    XrVector3f position = addVector(
+        headLocation.pose.position,
+        scaleVector(forward, 2.5f));
+    position.y -= 0.1f;
+    g_streamLayerPose.position = position;
+    g_streamLayerPose.orientation = quaternionFromGaze(forward);
+    g_streamLayerPoseValid = true;
+    LOGI("Immersive stream recentered on full gaze: position=(%.2f, %.2f, %.2f), forward=(%.2f, %.2f, %.2f)",
+         position.x, position.y, position.z, forward.x, forward.y, forward.z);
+    return true;
+}
+
+static bool locatePointer(
+        XrSpace space,
+        XrTime displayTime,
+        float* normalizedX,
+        float* normalizedY) {
+    if (space == XR_NULL_HANDLE || !g_pfnLocateSpace ||
+        g_appSpace == XR_NULL_HANDLE)
+        return false;
+    XrSpaceLocation location = { XR_TYPE_SPACE_LOCATION };
+    if (XR_FAILED(g_pfnLocateSpace(space, g_appSpace, displayTime, &location)) ||
+        (location.locationFlags & XR_SPACE_LOCATION_POSITION_VALID_BIT) == 0 ||
+        (location.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT) == 0)
+        return false;
+
+    const XrQuaternionf q = location.pose.orientation;
+    const XrVector3f origin = location.pose.position;
+    // OpenXR aim spaces point down -Z. Rotate that ray by the controller
+    // orientation, then intersect it with the stream's quad plane.
+    XrVector3f direction = rotateVector(q, { 0.0f, 0.0f, -1.0f });
+    const XrPosef layerPose = g_streamLayerPoseValid ? g_streamLayerPose : XrPosef{
+        { 0.0f, 0.0f, 0.0f, 1.0f },
+        { 0.0f, 0.0f, -2.5f }
+    };
+    const XrVector3f layerNormal = rotateVector(
+        layerPose.orientation, { 0.0f, 0.0f, 1.0f });
+    const float denominator = dotVector(direction, layerNormal);
+    if (std::fabs(denominator) < 0.0001f)
+        return false;
+    const float distance = dotVector(
+        subtractVector(layerPose.position, origin), layerNormal) / denominator;
+    if (distance <= 0.0f)
+        return false;
+    const XrVector3f hit = addVector(origin, scaleVector(direction, distance));
+    const XrQuaternionf inverseLayerRotation = {
+        -layerPose.orientation.x,
+        -layerPose.orientation.y,
+        -layerPose.orientation.z,
+        layerPose.orientation.w
+    };
+    const XrVector3f localHit = rotateVector(
+        inverseLayerRotation, subtractVector(hit, layerPose.position));
+    const float scale = g_immersiveViewScale.load(std::memory_order_relaxed);
+    const float width = 3.0f * scale;
+    const float height = 1.6875f * scale;
+    *normalizedX = 0.5f + localHit.x / width;
+    *normalizedY = 0.5f - localHit.y / height;
+    return *normalizedX >= 0.0f && *normalizedX <= 1.0f &&
+        *normalizedY >= 0.0f && *normalizedY <= 1.0f;
+}
+
+static void updateControllerPointer(
+        JNIEnv* env,
+        XrTime displayTime,
+        float leftTrigger,
+        float rightTrigger) {
+    if (!g_controllerPointerMethod || !g_activityObject)
+        return;
+    float x = 0.5f;
+    float y = 0.5f;
+    bool active = locatePointer(g_rightAimSpace, displayTime, &x, &y);
+    float pointerTrigger = rightTrigger;
+    if (!active) {
+        active = locatePointer(g_leftAimSpace, displayTime, &x, &y);
+        pointerTrigger = leftTrigger;
+    }
+    // Render the cursor directly in the OpenXR compositor. Updating the
+    // 960x640 Java settings bitmap for every tracked-controller sample made
+    // the cursor cadence depend on bitmap allocation and texture upload.
+    g_immersivePointerX.store(x, std::memory_order_relaxed);
+    g_immersivePointerY.store(y, std::memory_order_relaxed);
+    g_immersivePointerActive.store(active, std::memory_order_release);
+    g_immersivePointerPressed.store(
+        active && pointerTrigger >= 0.62f, std::memory_order_release);
+    env->CallVoidMethod(
+        g_activityObject,
+        g_controllerPointerMethod,
+        x,
+        y,
+        pointerTrigger,
+        (jboolean)(active ? JNI_TRUE : JNI_FALSE));
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        LOGE("Quest pointer callback raised a Java exception.");
+    }
+}
+
+static void updateControllerState(JNIEnv* env, XrTime displayTime) {
     if (g_gameplayActionSet == XR_NULL_HANDLE || !g_pfnSyncActions ||
         !g_controllerStateMethod || !g_activityObject)
         return;
@@ -379,6 +683,8 @@ static void updateControllerState(JNIEnv* env) {
              buttons);
     }
 
+    const float leftTrigger = getFloatAction(g_triggerAction, g_leftHandPath);
+    const float rightTrigger = getFloatAction(g_triggerAction, g_rightHandPath);
     env->CallVoidMethod(
         g_activityObject,
         g_controllerStateMethod,
@@ -387,7 +693,7 @@ static void updateControllerState(JNIEnv* env) {
         rightStick.x,
         rightStick.y,
         getFloatAction(g_triggerAction, g_leftHandPath),
-        getFloatAction(g_triggerAction, g_rightHandPath),
+        rightTrigger,
         getFloatAction(g_squeezeAction, g_leftHandPath),
         getFloatAction(g_squeezeAction, g_rightHandPath),
         (jint)buttons);
@@ -395,6 +701,7 @@ static void updateControllerState(JNIEnv* env) {
         env->ExceptionClear();
         LOGE("Quest controller callback raised a Java exception.");
     }
+    updateControllerPointer(env, displayTime, leftTrigger, rightTrigger);
 }
 
 static bool initOpenXRLoader() {
@@ -585,7 +892,9 @@ static bool initStereoProgram() {
         GL_RED, GL_UNSIGNED_BYTE, &neutralDepth);
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    if (g_stereoConversionEnabled) {
+    // Allocate the depth capture path even when starting flat. This allows
+    // 2D-to-3D to switch on during a stream without recreating the XR session.
+    if (g_rightEyeSwapchain != XR_NULL_HANDLE) {
         static const char* depthCaptureFragmentShaderSource =
             "#extension GL_OES_EGL_image_external : require\n"
             "precision highp float;\n"
@@ -710,6 +1019,57 @@ static bool initStereoProgram() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    // A compact transparent reticle is composited independently from the
+    // settings bitmap, allowing its position to follow controller tracking at
+    // the OpenXR frame rate without re-uploading the whole menu texture.
+    constexpr int POINTER_TEXTURE_SIZE = 64;
+    std::vector<uint8_t> pointerPixels(
+        POINTER_TEXTURE_SIZE * POINTER_TEXTURE_SIZE * 4, 0);
+    const float pointerCenter = (POINTER_TEXTURE_SIZE - 1) * 0.5f;
+    for (int y = 0; y < POINTER_TEXTURE_SIZE; ++y) {
+        for (int x = 0; x < POINTER_TEXTURE_SIZE; ++x) {
+            const float dx = (x - pointerCenter) / pointerCenter;
+            const float dy = (y - pointerCenter) / pointerCenter;
+            const float distance = std::sqrt(dx * dx + dy * dy);
+            uint8_t red = 0;
+            uint8_t green = 0;
+            uint8_t blue = 0;
+            uint8_t alpha = 0;
+            if (distance > 0.62f && distance < 0.88f) {
+                red = 255;
+                green = 255;
+                blue = 255;
+                alpha = 235;
+            } else if (distance < 0.24f) {
+                red = 56;
+                green = 189;
+                blue = 248;
+                alpha = 245;
+            } else if (distance < 0.52f) {
+                red = 8;
+                green = 17;
+                blue = 31;
+                alpha = 120;
+            }
+            const size_t offset =
+                static_cast<size_t>(y * POINTER_TEXTURE_SIZE + x) * 4;
+            pointerPixels[offset] = red;
+            pointerPixels[offset + 1] = green;
+            pointerPixels[offset + 2] = blue;
+            pointerPixels[offset + 3] = alpha;
+        }
+    }
+    glGenTextures(1, &g_immersivePointerTexture);
+    glBindTexture(GL_TEXTURE_2D, g_immersivePointerTexture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(
+        GL_TEXTURE_2D, 0, GL_RGBA, POINTER_TEXTURE_SIZE,
+        POINTER_TEXTURE_SIZE, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+        pointerPixels.data());
     glActiveTexture(GL_TEXTURE0);
 
     // A lightweight procedural layer supplies a slow, transparent ambience
@@ -821,6 +1181,52 @@ static void renderSettingsOverlay() {
     glActiveTexture(GL_TEXTURE0);
 }
 
+static void renderImmersivePointer() {
+    if (g_onboardingMode || !g_immersivePointerEnabled.load(std::memory_order_acquire) ||
+        !g_immersivePointerActive.load(std::memory_order_acquire) ||
+        !g_settingsProgram || !g_immersivePointerTexture) {
+        return;
+    }
+
+    // The native pointer receives coordinates over the full stream layer;
+    // settings occupy the centered 75% x 80% viewport within that layer.
+    const float pointerX = g_immersivePointerX.load(std::memory_order_relaxed);
+    const float pointerY = g_immersivePointerY.load(std::memory_order_relaxed);
+    const float menuX = std::fmax(0.0f, std::fmin(1.0f,
+        (pointerX - 0.125f) / 0.75f));
+    const float menuY = std::fmax(0.0f, std::fmin(1.0f,
+        (pointerY - 0.10f) / 0.80f));
+    const int size = g_immersivePointerPressed.load(std::memory_order_relaxed)
+        ? 46 : 36;
+    const float centerX = g_streamWidth * (0.125f + menuX * 0.75f);
+    // OpenGL viewports use a bottom-left origin while the controller's
+    // normalized pointer coordinate uses a top-left origin.
+    const float centerY = g_streamHeight * (0.10f + (1.0f - menuY) * 0.80f);
+
+    glUseProgram(g_settingsProgram);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, g_immersivePointerTexture);
+    glBindBuffer(GL_ARRAY_BUFFER, g_stereoVertexBuffer);
+    glVertexAttribPointer(
+        g_settingsPositionLocation, 2, GL_FLOAT, GL_FALSE,
+        4 * sizeof(GLfloat), (void*)0);
+    glEnableVertexAttribArray(g_settingsPositionLocation);
+    glVertexAttribPointer(
+        g_settingsTextureCoordLocation, 2, GL_FLOAT, GL_FALSE,
+        4 * sizeof(GLfloat), (void*)(2 * sizeof(GLfloat)));
+    glEnableVertexAttribArray(g_settingsTextureCoordLocation);
+    glViewport(
+        static_cast<GLint>(centerX - size * 0.5f),
+        static_cast<GLint>(centerY - size * 0.5f),
+        size,
+        size);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glDisable(GL_BLEND);
+    glActiveTexture(GL_TEXTURE0);
+}
+
 static bool renderOnboardingAuraFrame() {
     if (g_onboardingAuraSwapchain == XR_NULL_HANDLE ||
         g_onboardingAuraSwapchainImages.empty() || !g_onboardingAuraProgram)
@@ -925,7 +1331,7 @@ static void uploadPendingDepthMap() {
 }
 
 static void captureFrameForDepth(JNIEnv* env, const float* transform) {
-    if (!g_stereoConversionEnabled ||
+    if (!g_stereoConversionEnabled.load(std::memory_order_acquire) ||
         !g_depthWorkerReady.load(std::memory_order_acquire) ||
         g_depthInferenceInFlight.load(std::memory_order_acquire) ||
         !g_depthCaptureProgram || !g_depthCaptureFramebuffer ||
@@ -1080,8 +1486,9 @@ static bool createStereoSwapchain() {
     if (!createEyeSwapchain(
             &g_xrSwapchain, &g_stereoSwapchainImages, "Left"))
         return false;
-    if (g_stereoConversionEnabled &&
-        !createEyeSwapchain(
+    // Keep both eye swapchains alive for live 2D-to-3D toggling. The right
+    // one is submitted only while conversion is enabled.
+    if (!g_onboardingMode && !createEyeSwapchain(
             &g_rightEyeSwapchain, &g_rightEyeSwapchainImages, "Right"))
         return false;
     return initStereoProgram();
@@ -1185,7 +1592,9 @@ static bool renderStereoFrame(JNIEnv* env) {
     env->GetFloatArrayRegion(transformArray, 0, 16, transform);
     env->DeleteLocalRef(transformArray);
 
-    if (g_stereoConversionEnabled) {
+    const bool stereoConversionEnabled =
+        g_stereoConversionEnabled.load(std::memory_order_acquire);
+    if (stereoConversionEnabled) {
         uploadPendingDepthMap();
         captureFrameForDepth(env, transform);
     }
@@ -1194,7 +1603,8 @@ static bool renderStereoFrame(JNIEnv* env) {
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_EXTERNAL_OES, g_videoTexture);
     glUniformMatrix4fv(g_transformLocation, 1, GL_FALSE, transform);
-    glUniform1f(g_depthIntensityLocation, g_stereoDepthIntensity);
+    glUniform1f(g_depthIntensityLocation,
+        g_stereoDepthIntensity.load(std::memory_order_relaxed));
     glBindBuffer(GL_ARRAY_BUFFER, g_stereoVertexBuffer);
     glVertexAttribPointer(
         g_positionLocation, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), (void*)0);
@@ -1289,6 +1699,7 @@ static bool renderStereoFrame(JNIEnv* env) {
             return false;
         }
         renderSettingsOverlay();
+        renderImmersivePointer();
         glFinish();
 
         XrSwapchainImageReleaseInfo releaseInfo = {
@@ -1303,10 +1714,10 @@ static bool renderStereoFrame(JNIEnv* env) {
     if (!renderEye(
             g_xrSwapchain,
             g_stereoSwapchainImages,
-            g_stereoConversionEnabled ? -1.0f : 0.0f,
+            stereoConversionEnabled ? -1.0f : 0.0f,
             "Left"))
         return false;
-    if (g_stereoConversionEnabled &&
+    if (stereoConversionEnabled &&
         !renderEye(
             g_rightEyeSwapchain,
             g_rightEyeSwapchainImages,
@@ -1386,6 +1797,18 @@ static void* openxrRenderLoopThread(void* arg) {
                                        g_sessionState == XR_SESSION_STATE_LOSS_PENDING) {
                                 g_xrSessionRunning = false;
                             }
+                        } else if (eventData.type == XR_TYPE_EVENT_DATA_REFERENCE_SPACE_CHANGE_PENDING) {
+                            XrEventDataReferenceSpaceChangePending* spaceChanged =
+                                (XrEventDataReferenceSpaceChangePending*)&eventData;
+                            if (spaceChanged->session == g_xrSession &&
+                                spaceChanged->referenceSpaceType == XR_REFERENCE_SPACE_TYPE_LOCAL) {
+                                // Meta's system recenter updates LOCAL space and
+                                // emits this event.  Sample VIEW on the next
+                                // predicted frame so the new pose includes
+                                // vertical pitch as well as yaw.
+                                g_recenterRequested.store(true, std::memory_order_release);
+                                LOGI("LOCAL reference space changed; full-gaze stream recenter queued.");
+                            }
                         }
                     } else {
                         break;
@@ -1404,12 +1827,22 @@ static void* openxrRenderLoopThread(void* arg) {
                                     g_sessionState == XR_SESSION_STATE_FOCUSED);
 
             if (sessionIsActive && g_pfnWaitFrame && g_pfnBeginFrame && g_pfnEndFrame) {
-                if (attachedToJvm)
-                    updateControllerState(env);
-
                 XrFrameWaitInfo waitInfo = { XR_TYPE_FRAME_WAIT_INFO, NULL };
                 XrFrameState frameState = { XR_TYPE_FRAME_STATE, NULL };
                 g_pfnWaitFrame(g_xrSession, &waitInfo, &frameState);
+
+                if (!g_onboardingMode &&
+                    (g_recenterRequested.exchange(false, std::memory_order_acq_rel) ||
+                     !g_streamLayerPoseValid)) {
+                    // The first frame and every Meta-button recenter both use
+                    // the same full-gaze placement path.
+                    if (!updateStreamLayerPose(frameState.predictedDisplayTime)) {
+                        g_recenterRequested.store(true, std::memory_order_release);
+                    }
+                }
+
+                if (attachedToJvm)
+                    updateControllerState(env, frameState.predictedDisplayTime);
 
                 XrFrameBeginInfo beginInfo = { XR_TYPE_FRAME_BEGIN_INFO, NULL };
                 g_pfnBeginFrame(g_xrSession, &beginInfo);
@@ -1419,7 +1852,9 @@ static void* openxrRenderLoopThread(void* arg) {
                 bool auraFrameReady = !g_onboardingMode || frameState.shouldRender != XR_TRUE ||
                     renderOnboardingAuraFrame();
                 XrCompositionLayerQuad quadLayers[3];
+                XrCompositionLayerCylinderKHR cylinderLayers[2];
                 memset(quadLayers, 0, sizeof(quadLayers));
+                memset(cylinderLayers, 0, sizeof(cylinderLayers));
                 XrCompositionLayerQuad& leftLayer = quadLayers[0];
                 leftLayer.type = XR_TYPE_COMPOSITION_LAYER_QUAD;
                 leftLayer.next = NULL;
@@ -1436,16 +1871,21 @@ static void* openxrRenderLoopThread(void* arg) {
                 leftLayer.subImage.imageRect.extent.width = g_streamWidth;
                 leftLayer.subImage.imageRect.extent.height = g_streamHeight;
                 leftLayer.subImage.imageArrayIndex = 0;
-                leftLayer.pose.position.x = 0.0f;
-                leftLayer.pose.position.y = 0.0f;
-                leftLayer.pose.position.z = -2.5f;
-                leftLayer.pose.orientation.w = 1.0f;
-                leftLayer.size.width = 3.0f;
-                leftLayer.size.height = 1.6875f;
-                leftLayer.eyeVisibility = g_stereoConversionEnabled
+                leftLayer.pose = (!g_onboardingMode && g_streamLayerPoseValid)
+                    ? g_streamLayerPose
+                    : XrPosef{
+                        { 0.0f, 0.0f, 0.0f, 1.0f },
+                        { 0.0f, 0.0f, -2.5f }
+                    };
+                const float viewScale = g_immersiveViewScale.load(std::memory_order_relaxed);
+                const bool stereoConversionEnabled =
+                    g_stereoConversionEnabled.load(std::memory_order_acquire);
+                leftLayer.size.width = 3.0f * viewScale;
+                leftLayer.size.height = 1.6875f * viewScale;
+                leftLayer.eyeVisibility = stereoConversionEnabled
                         ? XR_EYE_VISIBILITY_LEFT : XR_EYE_VISIBILITY_BOTH;
 
-                XrCompositionLayerBaseHeader* layers[3] = { NULL, NULL, NULL };
+                XrCompositionLayerBaseHeader* layers[4] = { NULL, NULL, NULL, NULL };
                 uint32_t contentLayerCount = 0;
                 if (g_onboardingMode &&
                     g_onboardingAuraSwapchain != XR_NULL_HANDLE) {
@@ -1471,16 +1911,53 @@ static void* openxrRenderLoopThread(void* arg) {
                     layers[contentLayerCount++] =
                         reinterpret_cast<XrCompositionLayerBaseHeader*>(&auraLayer);
                 }
-                layers[contentLayerCount++] =
-                    reinterpret_cast<XrCompositionLayerBaseHeader*>(&leftLayer);
-                if (g_stereoConversionEnabled) {
-                    XrCompositionLayerQuad& rightLayer = quadLayers[2];
-                    rightLayer = leftLayer;
-                    rightLayer.subImage.swapchain = g_rightEyeSwapchain;
-                    rightLayer.subImage.imageRect.offset.x = 0;
-                    rightLayer.eyeVisibility = XR_EYE_VISIBILITY_RIGHT;
+                const bool useCurvedView = !g_onboardingMode &&
+                    g_curvedViewEnabled.load(std::memory_order_relaxed) &&
+                    g_compositionCylinderEnabled;
+                if (useCurvedView) {
+                    XrCompositionLayerCylinderKHR& leftCylinder = cylinderLayers[0];
+                    leftCylinder.type = XR_TYPE_COMPOSITION_LAYER_CYLINDER_KHR;
+                    leftCylinder.layerFlags = 0;
+                    leftCylinder.space = g_appSpace;
+                    leftCylinder.subImage = leftLayer.subImage;
+                    leftCylinder.pose = leftLayer.pose;
+                    leftCylinder.radius = 2.5f * viewScale;
+                    // A cylinder pose identifies the cylinder's center, not
+                    // its closest surface. Move that center toward the user
+                    // by its radius so the middle of the curved screen stays
+                    // at the same distance and apparent size as the flat
+                    // screen it replaces.
+                    const XrVector3f centerOffset = rotateVector(
+                        leftLayer.pose.orientation, { 0.0f, 0.0f, 1.0f });
+                    leftCylinder.pose.position = addVector(
+                        leftLayer.pose.position,
+                        scaleVector(centerOffset, leftCylinder.radius));
+                    leftCylinder.centralAngle = 1.28f;
+                    leftCylinder.aspectRatio = 16.0f / 9.0f;
+                    leftCylinder.eyeVisibility = stereoConversionEnabled
+                        ? XR_EYE_VISIBILITY_LEFT : XR_EYE_VISIBILITY_BOTH;
                     layers[contentLayerCount++] =
-                        reinterpret_cast<XrCompositionLayerBaseHeader*>(&rightLayer);
+                        reinterpret_cast<XrCompositionLayerBaseHeader*>(&leftCylinder);
+                    if (stereoConversionEnabled) {
+                        XrCompositionLayerCylinderKHR& rightCylinder = cylinderLayers[1];
+                        rightCylinder = leftCylinder;
+                        rightCylinder.subImage.swapchain = g_rightEyeSwapchain;
+                        rightCylinder.eyeVisibility = XR_EYE_VISIBILITY_RIGHT;
+                        layers[contentLayerCount++] =
+                            reinterpret_cast<XrCompositionLayerBaseHeader*>(&rightCylinder);
+                    }
+                } else {
+                    layers[contentLayerCount++] =
+                        reinterpret_cast<XrCompositionLayerBaseHeader*>(&leftLayer);
+                    if (stereoConversionEnabled) {
+                        XrCompositionLayerQuad& rightLayer = quadLayers[2];
+                        rightLayer = leftLayer;
+                        rightLayer.subImage.swapchain = g_rightEyeSwapchain;
+                        rightLayer.subImage.imageRect.offset.x = 0;
+                        rightLayer.eyeVisibility = XR_EYE_VISIBILITY_RIGHT;
+                        layers[contentLayerCount++] =
+                            reinterpret_cast<XrCompositionLayerBaseHeader*>(&rightLayer);
+                    }
                 }
 
                 XrFrameEndInfo endInfo = { XR_TYPE_FRAME_END_INFO, NULL };
@@ -1522,8 +1999,10 @@ JNIEXPORT jobject JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_
     }
     g_streamWidth = stream_width;
     g_streamHeight = stream_height;
-    g_stereoConversionEnabled = stereo_conversion_enabled == JNI_TRUE;
-    g_stereoDepthIntensity = stereo_depth_intensity;
+    g_stereoConversionEnabled.store(
+        stereo_conversion_enabled == JNI_TRUE, std::memory_order_release);
+    g_stereoDepthIntensity.store(stereo_depth_intensity,
+        std::memory_order_release);
     g_depthWorkerReady.store(false, std::memory_order_release);
     g_depthInferenceInFlight.store(false, std::memory_order_release);
     g_depthMapReady = false;
@@ -1550,25 +2029,36 @@ JNIEXPORT jobject JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_
         activityClass,
         "onNativeControllerState",
         "(FFFFFFFFI)V");
-    if (g_stereoConversionEnabled) {
-        jclass localDepthBridge = env->FindClass(
-            "com/cmsoft/horizonstream/depth/DepthAnythingV2Bridge");
-        if (localDepthBridge) {
-            g_depthBridgeClass = reinterpret_cast<jclass>(
-                env->NewGlobalRef(localDepthBridge));
-            g_depthSubmitMethod = env->GetStaticMethodID(
-                g_depthBridgeClass,
-                "submitFrame",
-                "(Ljava/nio/ByteBuffer;II)Z");
-            env->DeleteLocalRef(localDepthBridge);
-        }
-        if (env->ExceptionCheck()) {
-            env->ExceptionDescribe();
-            env->ExceptionClear();
-        }
-        if (!g_depthBridgeClass || !g_depthSubmitMethod)
-            LOGE("Unable to bind the Depth Anything V2 Kotlin bridge.");
+    g_controllerPointerMethod = env->GetMethodID(
+        activityClass,
+        "onNativeControllerPointer",
+        "(FFFZ)V");
+    // The onboarding activity intentionally does not expose the immersive
+    // settings pointer callback.  Missing that optional method must not leave
+    // a pending JNI exception on the render thread.
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        g_controllerPointerMethod = NULL;
     }
+    // Bind the bridge up front even if the session initially starts flat;
+    // users can enable AI 2D-to-3D from the in-world settings later.
+    jclass localDepthBridge = env->FindClass(
+        "com/cmsoft/horizonstream/depth/DepthAnythingV2Bridge");
+    if (localDepthBridge) {
+        g_depthBridgeClass = reinterpret_cast<jclass>(
+            env->NewGlobalRef(localDepthBridge));
+        g_depthSubmitMethod = env->GetStaticMethodID(
+            g_depthBridgeClass,
+            "submitFrame",
+            "(Ljava/nio/ByteBuffer;II)Z");
+        env->DeleteLocalRef(localDepthBridge);
+    }
+    if (env->ExceptionCheck()) {
+        env->ExceptionDescribe();
+        env->ExceptionClear();
+    }
+    if (!g_depthBridgeClass || !g_depthSubmitMethod)
+        LOGE("Unable to bind the Depth Anything V2 Kotlin bridge.");
     env->DeleteLocalRef(activityClass);
 
     PFN_xrInitializeLoaderKHR pfnInitializeLoaderKHR = NULL;
@@ -1609,14 +2099,21 @@ JNIEXPORT jobject JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_
     };
     g_metaTouchPlusEnabled = isInstanceExtensionAvailable(
         XR_META_TOUCH_CONTROLLER_PLUS_EXTENSION_NAME);
-    const char* enabledExtensions[4] = {
-        extensions[0], extensions[1], extensions[2], NULL
+    const char* enabledExtensions[6] = {
+        extensions[0], extensions[1], extensions[2], NULL, NULL, NULL
     };
     uint32_t enabledExtensionCount = 3;
     if (g_metaTouchPlusEnabled) {
         enabledExtensions[enabledExtensionCount++] =
             XR_META_TOUCH_CONTROLLER_PLUS_EXTENSION_NAME;
         LOGI("Meta Touch Plus controller extension is available; enabling it.");
+    }
+    g_compositionCylinderEnabled = isInstanceExtensionAvailable(
+        "XR_KHR_composition_layer_cylinder");
+    if (g_compositionCylinderEnabled) {
+        enabledExtensions[enabledExtensionCount++] =
+            "XR_KHR_composition_layer_cylinder";
+        LOGI("Composition cylinder extension is available; curved immersive view enabled.");
     }
 
     XrInstanceCreateInfo createInfo;
@@ -1659,6 +2156,8 @@ JNIEXPORT jobject JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_
     g_pfnGetInstanceProcAddr(g_xrInstance, "xrReleaseSwapchainImage", (PFN_xrVoidFunction*)&g_pfnReleaseSwapchainImage);
     g_pfnGetInstanceProcAddr(g_xrInstance, "xrDestroySwapchain", (PFN_xrVoidFunction*)&g_pfnDestroySwapchain);
     g_pfnGetInstanceProcAddr(g_xrInstance, "xrDestroySpace", (PFN_xrVoidFunction*)&g_pfnDestroySpace);
+    g_pfnGetInstanceProcAddr(g_xrInstance, "xrCreateActionSpace", (PFN_xrVoidFunction*)&g_pfnCreateActionSpace);
+    g_pfnGetInstanceProcAddr(g_xrInstance, "xrLocateSpace", (PFN_xrVoidFunction*)&g_pfnLocateSpace);
     g_pfnGetInstanceProcAddr(g_xrInstance, "xrDestroyActionSet", (PFN_xrVoidFunction*)&g_pfnDestroyActionSet);
     g_pfnGetInstanceProcAddr(g_xrInstance, "xrStringToPath", (PFN_xrVoidFunction*)&g_pfnStringToPath);
     g_pfnGetInstanceProcAddr(g_xrInstance, "xrCreateActionSet", (PFN_xrVoidFunction*)&g_pfnCreateActionSet);
@@ -1710,6 +2209,15 @@ JNIEXPORT jobject JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_
     spaceCreateInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
     spaceCreateInfo.poseInReferenceSpace.orientation.w = 1.0f;
     g_pfnCreateReferenceSpace(g_xrSession, &spaceCreateInfo, &g_appSpace);
+    if (!g_onboardingMode) {
+        spaceCreateInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_VIEW;
+        XrResult viewSpaceResult = g_pfnCreateReferenceSpace(
+            g_xrSession, &spaceCreateInfo, &g_streamViewSpace);
+        if (XR_FAILED(viewSpaceResult)) {
+            LOGW("Unable to create VIEW space for immersive recentering: %d", viewSpaceResult);
+            g_streamViewSpace = XR_NULL_HANDLE;
+        }
+    }
     if (g_onboardingMode) {
         spaceCreateInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_VIEW;
         g_pfnCreateReferenceSpace(g_xrSession, &spaceCreateInfo, &g_onboardingViewSpace);
@@ -1732,13 +2240,21 @@ JNIEXPORT jobject JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_
         return NULL;
     }
     LOGI("%s OpenXR video pipeline initialized at %d x %d per eye.",
-         g_stereoConversionEnabled ? "Stereo 2D-to-3D" : "Flat",
+         g_stereoConversionEnabled.load(std::memory_order_acquire)
+             ? "Stereo 2D-to-3D" : "Flat",
          g_streamWidth,
          g_streamHeight);
 
     LOGI("Native OpenXR Session created! Waiting for READY event to begin.");
     g_sessionState = XR_SESSION_STATE_UNKNOWN;
     g_xrSessionBegun = false;
+    g_streamLayerPose = XrPosef{
+        { 0.0f, 0.0f, 0.0f, 1.0f },
+        { 0.0f, 0.0f, -2.5f }
+    };
+    g_streamLayerPoseValid = false;
+    g_lastHorizontalForward = { 0.0f, 0.0f, -1.0f };
+    g_recenterRequested.store(!g_onboardingMode, std::memory_order_release);
     g_loggedFirstCompositedFrame = false;
     g_loggedFirstRenderAttempt = false;
     g_loggedRenderPrerequisiteFailure = false;
@@ -1795,6 +2311,53 @@ JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nat
     g_settingsOverlayDirty = true;
     g_settingsOverlayVisible = true;
     LOGI("Immersive settings overlay updated: %d x %d.", width, height);
+}
+
+JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nativeSetImmersiveViewOptions(
+        JNIEnv* env,
+        jobject thiz,
+        jboolean curved,
+        jfloat scale) {
+    (void)env;
+    (void)thiz;
+    g_curvedViewEnabled.store(curved == JNI_TRUE, std::memory_order_relaxed);
+    g_immersiveViewScale.store(
+        std::fmax(0.75f, std::fmin(1.5f, scale)),
+        std::memory_order_relaxed);
+    LOGI("Immersive view options updated: curved=%s scale=%.2f.",
+         curved == JNI_TRUE ? "true" : "false", scale);
+}
+
+JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nativeSetImmersivePointerEnabled(
+        JNIEnv* env,
+        jobject thiz,
+        jboolean enabled) {
+    (void)env;
+    (void)thiz;
+    g_immersivePointerEnabled.store(enabled == JNI_TRUE,
+        std::memory_order_release);
+    if (enabled != JNI_TRUE) {
+        g_immersivePointerActive.store(false, std::memory_order_release);
+        g_immersivePointerPressed.store(false, std::memory_order_release);
+    }
+}
+
+JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nativeSetStereoConversionEnabled(
+        JNIEnv* env,
+        jobject thiz,
+        jboolean enabled,
+        jfloat depth_intensity) {
+    (void)env;
+    (void)thiz;
+    const bool enabledValue = enabled == JNI_TRUE;
+    g_stereoConversionEnabled.store(enabledValue, std::memory_order_release);
+    g_stereoDepthIntensity.store(
+        std::fmax(0.0f, std::fmin(0.10f, depth_intensity)),
+        std::memory_order_release);
+    if (!enabledValue)
+        g_depthWorkerReady.store(false, std::memory_order_release);
+    LOGI("Live 2D-to-3D conversion updated: enabled=%s intensity=%.3f.",
+         enabledValue ? "true" : "false", depth_intensity);
 }
 
 JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nativeSetDepthPipelineReady(
@@ -1875,6 +2438,8 @@ JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nat
         if (g_depthCaptureTexture)
             glDeleteTextures(1, &g_depthCaptureTexture);
         if (g_settingsTexture) glDeleteTextures(1, &g_settingsTexture);
+        if (g_immersivePointerTexture)
+            glDeleteTextures(1, &g_immersivePointerTexture);
         g_stereoVertexBuffer = 0;
         g_stereoFramebuffer = 0;
         g_stereoProgram = 0;
@@ -1890,6 +2455,7 @@ JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nat
         g_depthTexture = 0;
         g_depthCaptureTexture = 0;
         g_settingsTexture = 0;
+        g_immersivePointerTexture = 0;
         eglMakeCurrent(g_eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
     }
     if (g_xrSession != XR_NULL_HANDLE && g_pfnEndSession) {
@@ -1913,6 +2479,18 @@ JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nat
             g_pfnDestroySpace(g_appSpace);
             g_appSpace = XR_NULL_HANDLE;
         }
+        if (g_streamViewSpace != XR_NULL_HANDLE && g_pfnDestroySpace) {
+            g_pfnDestroySpace(g_streamViewSpace);
+            g_streamViewSpace = XR_NULL_HANDLE;
+        }
+        if (g_leftAimSpace != XR_NULL_HANDLE && g_pfnDestroySpace) {
+            g_pfnDestroySpace(g_leftAimSpace);
+            g_leftAimSpace = XR_NULL_HANDLE;
+        }
+        if (g_rightAimSpace != XR_NULL_HANDLE && g_pfnDestroySpace) {
+            g_pfnDestroySpace(g_rightAimSpace);
+            g_rightAimSpace = XR_NULL_HANDLE;
+        }
         if (g_onboardingViewSpace != XR_NULL_HANDLE && g_pfnDestroySpace) {
             g_pfnDestroySpace(g_onboardingViewSpace);
             g_onboardingViewSpace = XR_NULL_HANDLE;
@@ -1933,6 +2511,7 @@ JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nat
         g_activityObject = NULL;
     }
     g_controllerStateMethod = NULL;
+    g_controllerPointerMethod = NULL;
     if (g_depthBridgeClass) {
         env->DeleteGlobalRef(g_depthBridgeClass);
         g_depthBridgeClass = NULL;
@@ -1979,6 +2558,19 @@ JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nat
     g_controllerSampleCount = 0;
     g_controllerSyncFailureCount = 0;
     g_xrInitialized = false;
+    g_compositionCylinderEnabled = false;
+    g_curvedViewEnabled.store(false, std::memory_order_relaxed);
+    g_immersiveViewScale.store(1.0f, std::memory_order_relaxed);
+    g_immersivePointerEnabled.store(false, std::memory_order_relaxed);
+    g_immersivePointerActive.store(false, std::memory_order_relaxed);
+    g_immersivePointerPressed.store(false, std::memory_order_relaxed);
+    g_recenterRequested.store(false, std::memory_order_relaxed);
+    g_streamLayerPose = XrPosef{
+        { 0.0f, 0.0f, 0.0f, 1.0f },
+        { 0.0f, 0.0f, -2.5f }
+    };
+    g_streamLayerPoseValid = false;
+    g_lastHorizontalForward = { 0.0f, 0.0f, -1.0f };
 }
 
 JNIEXPORT jobject JNICALL Java_com_cmsoft_horizonstream_onboarding_ImmersiveOnboardingActivity_nativeInitOnboardingVR(JNIEnv* env, jobject thiz, jobject activity) {

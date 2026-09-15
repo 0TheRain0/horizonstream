@@ -18,7 +18,6 @@ import android.view.SurfaceHolder
 import android.view.SurfaceView
 import androidx.annotation.Keep
 import com.cmsoft.horizonstream.R
-import com.cmsoft.horizonstream.common.ControllerAssignmentLearner
 import com.cmsoft.horizonstream.common.Preferences
 import com.cmsoft.horizonstream.depth.DepthAnythingV2Bridge
 import com.cmsoft.horizonstream.lib.ControllerState
@@ -64,6 +63,12 @@ class VRStreamActivity : StreamActivity(), SurfaceHolder.Callback {
         width: Int,
         height: Int
     )
+    private external fun nativeSetImmersiveViewOptions(curved: Boolean, scale: Float)
+    private external fun nativeSetImmersivePointerEnabled(enabled: Boolean)
+    private external fun nativeSetStereoConversionEnabled(
+        enabled: Boolean,
+        depthIntensity: Float
+    )
     private external fun nativeSetDepthPipelineReady(ready: Boolean)
     private external fun nativeSetDepthMap(depthMap: ByteArray, width: Int, height: Int)
     private external fun nativeStopVR()
@@ -75,7 +80,10 @@ class VRStreamActivity : StreamActivity(), SurfaceHolder.Callback {
     @Volatile
     private var immersiveSettingsVisible = false
     private var immersiveSettingsSelection = 0
-    private var immersiveSettingsLearning = false
+    @Volatile private var immersivePointerX = 0.5f
+    @Volatile private var immersivePointerY = 0.5f
+    @Volatile private var immersivePointerActive = false
+    @Volatile private var immersivePointerPressed = false
     @Volatile
     private var immersiveErrorDialog: ImmersiveErrorDialog? = null
     private var immersiveErrorSelection = 0
@@ -108,14 +116,49 @@ class VRStreamActivity : StreamActivity(), SurfaceHolder.Callback {
     @Volatile
     private var immersiveExitHintVisible = false
     private var previousQuestButtons = 0U
+    private var previousExternalControllerButtons = 0U
+    // Bluetooth motion events can arrive much faster than UI-frame updates.
+    // Latch the axis before posting work to the UI thread so one deflection
+    // can only advance one row until the stick returns to its dead zone.
+    private var externalNavigationStickLatched = false
+    private var externalMenuHeld = false
+    private var externalMenuLongPressTriggered = false
+    private var externalMenuAwaitingSecondTap = false
+    private var externalMenuSecondTapInProgress = false
+    private val externalMenuLongPress = Runnable {
+        if(externalMenuHeld && isVRInitialized && !isFinishing && !isDestroyed) {
+            externalMenuLongPressTriggered = true
+            externalMenuAwaitingSecondTap = false
+            externalMenuSecondTapInProgress = false
+            controllerHandler.removeCallbacks(dispatchExternalMenuSingleTap)
+            viewModel.input.pulseQuestControllerButton(
+                ControllerState.BUTTON_OPTIONS, force = true)
+            externalMenuHeld = false
+            runOnUiThread { openImmersiveControls() }
+        }
+    }
+    private val dispatchExternalMenuSingleTap = Runnable {
+        if(externalMenuAwaitingSecondTap && isVRInitialized) {
+            externalMenuAwaitingSecondTap = false
+            showImmersiveExitHint()
+            viewModel.input.pulseQuestControllerButton(
+                ControllerState.BUTTON_OPTIONS, force = true)
+        }
+    }
     private val questMenuLongPress = Runnable {
         if (questMenuHeld && acceptQuestControllerInput) {
             questMenuLongPressTriggered = true
             questMenuAwaitingSecondTap = false
             questMenuSecondTapInProgress = false
             controllerHandler.removeCallbacks(dispatchQuestMenuSingleTap)
-            Log.i(TAG, "Quest Menu long-press recognized; exiting stream.")
-            exitImmersiveStream()
+            // Preserve the familiar single Menu action (Options) first, then
+            // expose the spatial controls without leaving the game.
+            viewModel.input.pulseQuestControllerButton(
+                ControllerState.BUTTON_OPTIONS,
+                force = true)
+            questMenuHeld = false
+            Log.i(TAG, "Quest Menu long-press recognized; opening immersive stream controls.")
+            runOnUiThread { openImmersiveControls() }
         }
     }
     private val dispatchQuestMenuSingleTap = Runnable {
@@ -199,7 +242,90 @@ class VRStreamActivity : StreamActivity(), SurfaceHolder.Callback {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        viewModel.input.controllerStateInterceptor = ::interceptImmersiveControllerInput
         Log.i(TAG, "VRStreamActivity created; OpenXR will initialize after resume and before stream startup.")
+    }
+
+    /**
+     * Bluetooth gamepads are delivered through Android input events, whereas
+     * Quest Touch input arrives through OpenXR. Consume the former while a
+     * modal immersive panel is open, so both controller types navigate the
+     * same UI and neither leaks menu actions into the active game.
+     */
+    private fun interceptImmersiveControllerInput(
+        state: ControllerState,
+        isQuestInput: Boolean
+    ): Boolean {
+        if(isQuestInput)
+            return false
+        if(!isVRInitialized) {
+            previousExternalControllerButtons = 0U
+            return false
+        }
+
+        if(immersiveSettingsVisible || immersiveErrorDialog != null || immersivePinVisible) {
+            val leftX = state.leftX.toFloat() / Short.MAX_VALUE.toFloat()
+            val rawLeftY = state.leftY.toFloat() / Short.MAX_VALUE.toFloat()
+            var navigationButtons =
+                state.buttons and previousExternalControllerButtons.inv()
+            previousExternalControllerButtons = state.buttons
+            if(kotlin.math.abs(rawLeftY) < 0.35f) {
+                externalNavigationStickLatched = false
+            } else if(!externalNavigationStickLatched && kotlin.math.abs(rawLeftY) > 0.65f) {
+                // Android reports a physical stick's up direction as negative
+                // Y. Translate it to the menu's explicit D-pad direction.
+                navigationButtons = navigationButtons or if(rawLeftY < 0f)
+                    ControllerState.BUTTON_DPAD_UP
+                else
+                    ControllerState.BUTTON_DPAD_DOWN
+                externalNavigationStickLatched = true
+            }
+            if(state.buttons and ControllerState.BUTTON_OPTIONS == 0U)
+                viewModel.input.suppressedPhysicalButtons = 0U
+            runOnUiThread {
+                when {
+                    immersivePinVisible -> handleImmersivePinInput(leftX, 0f, navigationButtons)
+                    immersiveErrorDialog != null -> handleImmersiveErrorInput(0f, navigationButtons)
+                    immersiveSettingsVisible -> handleImmersiveSettingsInput(0f, navigationButtons)
+                }
+            }
+            return true
+        }
+
+        val currentButtons = state.buttons
+        val newlyPressed = currentButtons and previousExternalControllerButtons.inv()
+        previousExternalControllerButtons = currentButtons
+        val menuPressed = currentButtons and ControllerState.BUTTON_OPTIONS != 0U
+        var consumeEvent = menuPressed
+        if(menuPressed && newlyPressed and ControllerState.BUTTON_OPTIONS != 0U) {
+            viewModel.input.suppressedPhysicalButtons =
+                viewModel.input.suppressedPhysicalButtons or ControllerState.BUTTON_OPTIONS
+            if(externalMenuAwaitingSecondTap) {
+                externalMenuAwaitingSecondTap = false
+                externalMenuSecondTapInProgress = true
+                controllerHandler.removeCallbacks(dispatchExternalMenuSingleTap)
+            }
+            externalMenuHeld = true
+            externalMenuLongPressTriggered = false
+            controllerHandler.postDelayed(externalMenuLongPress, 750L)
+        } else if(!menuPressed && externalMenuHeld) {
+            consumeEvent = true
+            externalMenuHeld = false
+            viewModel.input.suppressedPhysicalButtons =
+                viewModel.input.suppressedPhysicalButtons and ControllerState.BUTTON_OPTIONS.inv()
+            controllerHandler.removeCallbacks(externalMenuLongPress)
+            if(!externalMenuLongPressTriggered && externalMenuSecondTapInProgress) {
+                externalMenuSecondTapInProgress = false
+                viewModel.input.pulseQuestControllerButton(
+                    ControllerState.BUTTON_PS, force = true)
+            } else if(!externalMenuLongPressTriggered) {
+                externalMenuAwaitingSecondTap = true
+                controllerHandler.removeCallbacks(dispatchExternalMenuSingleTap)
+                controllerHandler.postDelayed(dispatchExternalMenuSingleTap, 350L)
+            }
+            externalMenuLongPressTriggered = false
+        }
+        return consumeEvent
     }
 
     /**
@@ -215,31 +341,20 @@ class VRStreamActivity : StreamActivity(), SurfaceHolder.Callback {
         try {
             val profile = viewModel.session.connectInfo.videoProfile
             val preferences = com.cmsoft.horizonstream.common.Preferences(this)
-            val depthIntensity = when(preferences.simulated3dIntensity) {
-                "low" -> 0.008f
-                "high" -> 0.025f
-                "strong" -> 0.070f
-                else -> 0.015f
-            }
             val xrSurface = nativeInitVR(
                 this,
                 profile.width,
                 profile.height,
                 preferences.simulated3dEnabled,
-                depthIntensity
+                simulated3dIntensity(preferences)
             )
             isVRInitialized = xrSurface != null
             if (xrSurface != null) {
                 Log.i(TAG, "OpenXR initialized successfully. Received Android Surface Swapchain.")
-                if(preferences.simulated3dEnabled) {
-                    DepthAnythingV2Bridge.initialize(
-                        context = this,
-                        onReady = { nativeSetDepthPipelineReady(true) },
-                        onDepthMap = { map, width, height ->
-                            nativeSetDepthMap(map, width, height)
-                        }
-                    )
-                }
+                nativeSetImmersiveViewOptions(
+                    preferences.curvedViewEnabled,
+                    preferences.immersiveViewScale)
+                applySimulated3dSetting(preferences)
                 // Pass the OpenXR Surface to the ViewModel's session so the PlayStation video is drawn to the VR quad
                 viewModel.session.setSurface(xrSurface)
                 binding.root.visibility = android.view.View.GONE
@@ -267,6 +382,23 @@ class VRStreamActivity : StreamActivity(), SurfaceHolder.Callback {
         else -> R.string.preferences_simulated_3d_intensity_medium
     })
 
+    private fun immersiveSettingsItemCount(): Int = 7
+
+    private fun openImmersiveControls() {
+        if (isFinishing || isDestroyed || !isVRInitialized)
+            return
+        cancelImmersiveExitHint()
+        immersiveErrorDialog = null
+        immersivePinVisible = false
+        immersiveSettingsVisible = true
+        immersiveSettingsSelection = 0
+        externalNavigationStickLatched = false
+        immersivePointerActive = false
+        immersivePointerPressed = false
+        nativeSetImmersivePointerEnabled(true)
+        renderImmersiveSettingsOverlay()
+    }
+
     override fun openStreamSettings() {
         if(!isVRInitialized) {
             super.openStreamSettings()
@@ -278,7 +410,9 @@ class VRStreamActivity : StreamActivity(), SurfaceHolder.Callback {
             cancelImmersiveExitHint()
             immersiveSettingsVisible = true
             immersiveSettingsSelection = 0
-            immersiveSettingsLearning = false
+            previousExternalControllerButtons = 0U
+            externalNavigationStickLatched = false
+            nativeSetImmersivePointerEnabled(true)
             renderImmersiveSettingsOverlay()
             Log.i(TAG, "Immersive stream settings opened.")
         }
@@ -322,7 +456,9 @@ class VRStreamActivity : StreamActivity(), SurfaceHolder.Callback {
         runOnUiThread {
             cancelImmersiveExitHint()
             immersiveSettingsVisible = false
-            immersiveSettingsLearning = false
+            previousExternalControllerButtons = 0U
+            externalNavigationStickLatched = false
+            nativeSetImmersivePointerEnabled(false)
             immersiveErrorDialog = null
             immersivePinVisible = true
             immersivePinIncorrect = pinIncorrect
@@ -345,7 +481,9 @@ class VRStreamActivity : StreamActivity(), SurfaceHolder.Callback {
         runOnUiThread {
             cancelImmersiveExitHint()
             immersiveSettingsVisible = false
-            immersiveSettingsLearning = false
+            previousExternalControllerButtons = 0U
+            externalNavigationStickLatched = false
+            nativeSetImmersivePointerEnabled(false)
             immersivePinVisible = false
             immersiveErrorSelection = 0
             settingsStickLatched = false
@@ -358,6 +496,9 @@ class VRStreamActivity : StreamActivity(), SurfaceHolder.Callback {
 
     private fun closeImmersiveErrorDialog() {
         immersiveErrorDialog = null
+        previousExternalControllerButtons = 0U
+        externalNavigationStickLatched = false
+        viewModel.input.suppressedPhysicalButtons = 0U
         settingsStickLatched = false
         nativeSetSettingsOverlay(null, 0, 0)
     }
@@ -412,6 +553,9 @@ class VRStreamActivity : StreamActivity(), SurfaceHolder.Callback {
 
     private fun closeImmersivePinOverlay() {
         immersivePinVisible = false
+        previousExternalControllerButtons = 0U
+        externalNavigationStickLatched = false
+        viewModel.input.suppressedPhysicalButtons = 0U
         pinHorizontalLatched = false
         pinVerticalLatched = false
         nativeSetSettingsOverlay(null, 0, 0)
@@ -422,10 +566,15 @@ class VRStreamActivity : StreamActivity(), SurfaceHolder.Callback {
         leftY: Float,
         newlyPressed: UInt
     ) {
+        val dpadLeft = newlyPressed and ControllerState.BUTTON_DPAD_LEFT != 0U
+        val dpadRight = newlyPressed and ControllerState.BUTTON_DPAD_RIGHT != 0U
+        val dpadUp = newlyPressed and ControllerState.BUTTON_DPAD_UP != 0U
+        val dpadDown = newlyPressed and ControllerState.BUTTON_DPAD_DOWN != 0U
         if(kotlin.math.abs(leftX) < 0.35f)
             pinHorizontalLatched = false
-        if(!pinHorizontalLatched && kotlin.math.abs(leftX) > 0.65f) {
-            immersivePinIndex = if(leftX > 0f)
+        if(dpadLeft || dpadRight ||
+            (!pinHorizontalLatched && kotlin.math.abs(leftX) > 0.65f)) {
+            immersivePinIndex = if(dpadRight || (!dpadLeft && leftX > 0f))
                 (immersivePinIndex + 1) % immersivePinDigits.size
             else
                 (immersivePinIndex - 1 + immersivePinDigits.size) %
@@ -435,8 +584,9 @@ class VRStreamActivity : StreamActivity(), SurfaceHolder.Callback {
         }
         if(kotlin.math.abs(leftY) < 0.35f)
             pinVerticalLatched = false
-        if(!pinVerticalLatched && kotlin.math.abs(leftY) > 0.65f) {
-            val delta = if(leftY > 0f) 1 else -1
+        if(dpadUp || dpadDown ||
+            (!pinVerticalLatched && kotlin.math.abs(leftY) > 0.65f)) {
+            val delta = if(dpadUp || (!dpadDown && leftY > 0f)) 1 else -1
             immersivePinDigits[immersivePinIndex] =
                 (immersivePinDigits[immersivePinIndex] + delta + 10) % 10
             pinVerticalLatched = true
@@ -468,11 +618,14 @@ class VRStreamActivity : StreamActivity(), SurfaceHolder.Callback {
 
     private fun handleImmersiveErrorInput(leftY: Float, newlyPressed: UInt) {
         val activeDialog = immersiveErrorDialog ?: return
+        val dpadUp = newlyPressed and ControllerState.BUTTON_DPAD_UP != 0U
+        val dpadDown = newlyPressed and ControllerState.BUTTON_DPAD_DOWN != 0U
         if(kotlin.math.abs(leftY) < 0.35f)
             settingsStickLatched = false
-        if(!settingsStickLatched && kotlin.math.abs(leftY) > 0.65f) {
+        if(dpadUp || dpadDown ||
+            (!settingsStickLatched && kotlin.math.abs(leftY) > 0.65f)) {
             val count = activeDialog.actions.size
-            immersiveErrorSelection = if(leftY > 0f)
+            immersiveErrorSelection = if(dpadUp || (!dpadDown && leftY > 0f))
                 (immersiveErrorSelection - 1 + count) % count
             else
                 (immersiveErrorSelection + 1) % count
@@ -491,26 +644,83 @@ class VRStreamActivity : StreamActivity(), SurfaceHolder.Callback {
 
     private fun closeImmersiveSettings() {
         immersiveSettingsVisible = false
-        immersiveSettingsLearning = false
+        previousExternalControllerButtons = 0U
+        externalNavigationStickLatched = false
+        viewModel.input.suppressedPhysicalButtons = 0U
+        immersivePointerActive = false
+        immersivePointerPressed = false
+        nativeSetImmersivePointerEnabled(false)
         settingsStickLatched = false
         nativeSetSettingsOverlay(null, 0, 0)
         Log.i(TAG, "Immersive stream settings closed.")
     }
 
+    private fun simulated3dIntensity(preferences: Preferences): Float = when(
+        preferences.simulated3dIntensity
+    ) {
+        "low" -> 0.008f
+        "high" -> 0.025f
+        "strong" -> 0.070f
+        else -> 0.015f
+    }
+
+    private fun applySimulated3dSetting(preferences: Preferences) {
+        val enabled = preferences.simulated3dEnabled
+        nativeSetStereoConversionEnabled(enabled, simulated3dIntensity(preferences))
+        if(enabled) {
+            DepthAnythingV2Bridge.initialize(
+                context = this,
+                onReady = { nativeSetDepthPipelineReady(true) },
+                onDepthMap = { map, width, height ->
+                    nativeSetDepthMap(map, width, height)
+                }
+            )
+        } else {
+            nativeSetDepthPipelineReady(false)
+        }
+    }
+
     private fun activateImmersiveSetting() {
         val preferences = Preferences(this)
         when(immersiveSettingsSelection) {
-            0 -> preferences.simulated3dEnabled = !preferences.simulated3dEnabled
+            0 -> {
+                val sizes = listOf(0.8f, 1.0f, 1.2f, 1.4f)
+                val index = sizes.indices.minByOrNull {
+                    kotlin.math.abs(sizes[it] - preferences.immersiveViewScale)
+                } ?: 1
+                preferences.immersiveViewScale = sizes[(index + 1) % sizes.size]
+                nativeSetImmersiveViewOptions(
+                    preferences.curvedViewEnabled,
+                    preferences.immersiveViewScale)
+            }
             1 -> {
+                preferences.curvedViewEnabled = !preferences.curvedViewEnabled
+                nativeSetImmersiveViewOptions(
+                    preferences.curvedViewEnabled,
+                    preferences.immersiveViewScale)
+            }
+            2 -> preferences.questControllerEmulationEnabled =
+                !preferences.questControllerEmulationEnabled
+            3 -> {
+                preferences.simulated3dEnabled = !preferences.simulated3dEnabled
+                applySimulated3dSetting(preferences)
+            }
+            4 -> {
                 val strengths = listOf("low", "medium", "high", "strong")
                 val index = strengths.indexOf(preferences.simulated3dIntensity)
                     .coerceAtLeast(0)
                 preferences.simulated3dIntensity =
                     strengths[(index + 1) % strengths.size]
+                if(preferences.simulated3dEnabled)
+                    applySimulated3dSetting(preferences)
             }
-            2 -> immersiveSettingsLearning = true
-            3 -> {
+            5 -> {
                 closeImmersiveSettings()
+                return
+            }
+            6 -> {
+                closeImmersiveSettings()
+                exitImmersiveStream()
                 return
             }
         }
@@ -521,26 +731,17 @@ class VRStreamActivity : StreamActivity(), SurfaceHolder.Callback {
         leftY: Float,
         newlyPressed: UInt
     ) {
-        if(immersiveSettingsLearning) {
-            val learnedButton = Integer.lowestOneBit(newlyPressed.toInt()).toUInt()
-            if(learnedButton != 0U &&
-                learnedButton != ControllerState.BUTTON_OPTIONS) {
-                Preferences(this).streamSettingsButtonBinding =
-                    "quest:$learnedButton"
-                immersiveSettingsLearning = false
-                renderImmersiveSettingsOverlay()
-            }
-            return
-        }
-
+        val dpadUp = newlyPressed and ControllerState.BUTTON_DPAD_UP != 0U
+        val dpadDown = newlyPressed and ControllerState.BUTTON_DPAD_DOWN != 0U
         if(kotlin.math.abs(leftY) < 0.35f)
             settingsStickLatched = false
-        if(!settingsStickLatched && kotlin.math.abs(leftY) > 0.65f) {
+        if(dpadUp || dpadDown ||
+            (!settingsStickLatched && kotlin.math.abs(leftY) > 0.65f)) {
             immersiveSettingsSelection =
-                if(leftY > 0f)
-                    (immersiveSettingsSelection - 1 + 4) % 4
+                if(dpadUp || (!dpadDown && leftY > 0f))
+                    (immersiveSettingsSelection - 1 + immersiveSettingsItemCount()) % immersiveSettingsItemCount()
                 else
-                    (immersiveSettingsSelection + 1) % 4
+                    (immersiveSettingsSelection + 1) % immersiveSettingsItemCount()
             settingsStickLatched = true
             renderImmersiveSettingsOverlay()
         }
@@ -569,43 +770,42 @@ class VRStreamActivity : StreamActivity(), SurfaceHolder.Callback {
         canvas.drawRoundRect(RectF(0f, 0f, width.toFloat(), height.toFloat()),
             36f, 36f, paint)
         paint.color = Color.rgb(56, 189, 248)
-        paint.textSize = 52f
+        paint.textSize = 48f
         paint.typeface = android.graphics.Typeface.DEFAULT_BOLD
         canvas.drawText("Stream Settings", 56f, 78f, paint)
 
         val preferences = Preferences(this)
-        val assignment = ControllerAssignmentLearner.label(
-            preferences.streamSettingsButtonBinding)
+        val sizeLabel = "${(preferences.immersiveViewScale * 100f).toInt()}%"
         val items = arrayOf(
-            "AI 2D-to-3D (Experimental): ${if(preferences.simulated3dEnabled) "On" else "Off"}",
+            "Screen size: $sizeLabel",
+            "Curved immersive screen: ${if(preferences.curvedViewEnabled) "On" else "Off"}",
+            "Quest controller support: ${if(preferences.questControllerEmulationEnabled) "On" else "Off"}",
+            "AI 2D-to-3D: ${if(preferences.simulated3dEnabled) "On" else "Off"}",
             "AI depth strength: ${depthStrengthLabel(preferences.simulated3dIntensity)}",
-            "Exit-stream button: $assignment",
-            "Close"
+            "Close",
+            "Exit streaming"
         )
         items.forEachIndexed { index, item ->
-            val top = 112f + index * 98f
+            val top = 94f + index * 68f
             if(index == immersiveSettingsSelection) {
                 paint.color = Color.argb(255, 14, 116, 144)
-                canvas.drawRoundRect(RectF(38f, top, 922f, top + 78f),
+                canvas.drawRoundRect(RectF(38f, top, 922f, top + 56f),
                     18f, 18f, paint)
             }
             paint.color = Color.WHITE
-            paint.textSize = 32f
+            paint.textSize = 27f
             paint.typeface = if(index == immersiveSettingsSelection)
                 android.graphics.Typeface.DEFAULT_BOLD
             else
                 android.graphics.Typeface.DEFAULT
-            canvas.drawText(item, 64f, top + 51f, paint)
+            canvas.drawText(item, 64f, top + 37f, paint)
         }
 
         paint.color = Color.rgb(148, 163, 184)
-        paint.textSize = 25f
+        paint.textSize = 22f
         paint.typeface = android.graphics.Typeface.DEFAULT
-        val footer = if(immersiveSettingsLearning)
-            "Press a Quest controller button now (Menu remains reserved)"
-        else
-            "Left stick: select    A: change    B or Menu: close"
-        canvas.drawText(footer, 56f, 590f, paint)
+        val footer = "Aim + trigger: choose    D-pad / left stick: select    B/Menu: close"
+        canvas.drawText(footer, 56f, 585f, paint)
 
         submitImmersiveOverlay(bitmap, width, height)
     }
@@ -759,6 +959,44 @@ class VRStreamActivity : StreamActivity(), SurfaceHolder.Callback {
         nativeSetSettingsOverlay(rgba, width, height)
     }
 
+    private fun activateImmersiveSettingAt(x: Float, y: Float) {
+        if (!immersiveSettingsVisible)
+            return
+        val pixelX = ((x - 0.125f) / 0.75f).coerceIn(0f, 1f) * 960f
+        val pixelY = ((y - 0.1f) / 0.8f).coerceIn(0f, 1f) * 640f
+        if (pixelX < 38f || pixelX > 922f)
+            return
+        val index = ((pixelY - 94f) / 68f).toInt()
+        if (index !in 0 until immersiveSettingsItemCount())
+            return
+        val rowTop = 94f + index * 68f
+        if (pixelY < rowTop || pixelY > rowTop + 56f)
+            return
+        immersiveSettingsSelection = index
+        activateImmersiveSetting()
+    }
+
+    @Keep
+    @Suppress("unused")
+    private fun onNativeControllerPointer(
+        x: Float,
+        y: Float,
+        trigger: Float,
+        active: Boolean
+    ) {
+        val wasPressed = immersivePointerPressed
+        immersivePointerX = x
+        immersivePointerY = y
+        immersivePointerActive = active && immersiveSettingsVisible
+        immersivePointerPressed = immersivePointerActive && trigger >= 0.62f
+        val released = wasPressed && !immersivePointerPressed
+        if (!immersiveSettingsVisible)
+            return
+        if (released && active) {
+            runOnUiThread { activateImmersiveSettingAt(x, y) }
+        }
+    }
+
     @Keep
     @Suppress("unused")
     private fun onNativeControllerState(
@@ -828,22 +1066,6 @@ class VRStreamActivity : StreamActivity(), SurfaceHolder.Callback {
                 buttons = 0U
             )
             return
-        }
-
-        if(ControllerAssignmentLearner.captureQuestButtons(newlyPressed))
-            forwardedButtons = forwardedButtons and newlyPressed.inv()
-
-        val assignedQuestButton = ControllerAssignmentLearner.normalizedBinding(
-            Preferences(this).streamSettingsButtonBinding)
-            ?.takeIf { it.startsWith("quest:") }
-            ?.substringAfter(':')
-            ?.toUIntOrNull()
-        if(assignedQuestButton != null &&
-            currentButtons and assignedQuestButton != 0U) {
-            forwardedButtons = forwardedButtons and assignedQuestButton.inv()
-            if(newlyPressed and assignedQuestButton != 0U) {
-                runOnUiThread { finish() }
-            }
         }
 
         // Existing Menu chords take precedence over the tap gesture: Menu+X
@@ -942,6 +1164,7 @@ class VRStreamActivity : StreamActivity(), SurfaceHolder.Callback {
 
     override fun onPause() {
         acceptQuestControllerInput = false
+        nativeSetImmersivePointerEnabled(false)
         questMenuHeld = false
         questMenuLongPressTriggered = false
         questMenuAwaitingSecondTap = false
@@ -949,8 +1172,17 @@ class VRStreamActivity : StreamActivity(), SurfaceHolder.Callback {
         questMenuGestureSuppressed = false
         questMenuReleasedSinceResume = false
         previousQuestButtons = 0U
+        previousExternalControllerButtons = 0U
+        externalNavigationStickLatched = false
         controllerHandler.removeCallbacks(questMenuLongPress)
         controllerHandler.removeCallbacks(dispatchQuestMenuSingleTap)
+        controllerHandler.removeCallbacks(externalMenuLongPress)
+        controllerHandler.removeCallbacks(dispatchExternalMenuSingleTap)
+        externalMenuHeld = false
+        externalMenuLongPressTriggered = false
+        externalMenuAwaitingSecondTap = false
+        externalMenuSecondTapInProgress = false
+        viewModel.input.suppressedPhysicalButtons = 0U
         cancelImmersiveExitHint()
         if(immersiveSettingsVisible)
             closeImmersiveSettings()
@@ -959,6 +1191,8 @@ class VRStreamActivity : StreamActivity(), SurfaceHolder.Callback {
     }
 
     override fun onDestroy() {
+        viewModel.input.controllerStateInterceptor = null
+        viewModel.input.suppressedPhysicalButtons = 0U
         DepthAnythingV2Bridge.shutdown()
         super.onDestroy()
         Log.i(TAG, "VRStreamActivity onDestroy - Stopping OpenXR 3D VR Engine.")

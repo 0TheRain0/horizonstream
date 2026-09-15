@@ -21,7 +21,6 @@ import androidx.fragment.app.Fragment
 import androidx.lifecycle.*
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.cmsoft.horizonstream.R
-import com.cmsoft.horizonstream.common.ControllerAssignmentLearner
 import com.cmsoft.horizonstream.common.DeviceUtils
 import com.cmsoft.horizonstream.common.Preferences
 import com.cmsoft.horizonstream.common.ext.viewModelFactory
@@ -97,7 +96,6 @@ open class StreamActivity : AppCompatActivity(), View.OnSystemUiVisibilityChange
 		binding = ActivityStreamBinding.inflate(layoutInflater)
 		setContentView(binding.root)
 		// The legacy bottom control strip obscures the flat streaming view.
-		// Stream settings remain available through the learned controller button.
 		if(this !is VRStreamActivity)
 			binding.overlay.isGone = true
 		window.decorView.setOnSystemUiVisibilityChangeListener(this)
@@ -295,13 +293,9 @@ open class StreamActivity : AppCompatActivity(), View.OnSystemUiVisibilityChange
 				"strong" -> R.string.preferences_simulated_3d_intensity_strong
 				else -> R.string.preferences_simulated_3d_intensity_medium
 			})
-			val assignmentLabel = ControllerAssignmentLearner.label(
-				preferences.streamSettingsButtonBinding)
 			val items = arrayOf(
 				getString(R.string.stream_settings_spatial_restart, enabledLabel),
-				getString(R.string.stream_settings_depth, intensityLabel),
-				getString(R.string.stream_settings_assignment, assignmentLabel),
-				getString(R.string.stream_settings_learn)
+				getString(R.string.stream_settings_depth, intensityLabel)
 			)
 
 			streamSettingsDialog = MaterialAlertDialogBuilder(this)
@@ -325,40 +319,10 @@ open class StreamActivity : AppCompatActivity(), View.OnSystemUiVisibilityChange
 							streamSettingsDialog = null
 							openStreamSettings()
 						}
-						3 -> {
-							activeDialog.dismiss()
-							streamSettingsDialog = null
-							showControllerLearnDialog()
-						}
 					}
 				}
 				.setNegativeButton(android.R.string.cancel, null)
 				.setOnDismissListener { streamSettingsDialog = null }
-				.show()
-		}
-	}
-
-	private fun showControllerLearnDialog()
-	{
-		runOnUiThread {
-			ControllerAssignmentLearner.begin { learnedBinding ->
-				Preferences(this).streamSettingsButtonBinding = learnedBinding
-				streamSettingsDialog?.dismiss()
-				streamSettingsDialog = null
-				openStreamSettings()
-			}
-			streamSettingsDialog = MaterialAlertDialogBuilder(this)
-				.setTitle(R.string.preferences_stream_settings_button_title)
-				.setMessage(R.string.preferences_stream_settings_button_learning)
-				.setNegativeButton(android.R.string.cancel) { _, _ ->
-					ControllerAssignmentLearner.cancel()
-				}
-				.setOnCancelListener { ControllerAssignmentLearner.cancel() }
-				.setOnDismissListener {
-					if(ControllerAssignmentLearner.isLearning)
-						ControllerAssignmentLearner.cancel()
-					streamSettingsDialog = null
-				}
 				.show()
 		}
 	}
@@ -513,18 +477,6 @@ open class StreamActivity : AppCompatActivity(), View.OnSystemUiVisibilityChange
 
 	override fun dispatchKeyEvent(event: KeyEvent): Boolean
 	{
-		if(ControllerAssignmentLearner.captureKeyEvent(event))
-			return true
-
-		val assignedKey = Preferences(this).streamSettingsButtonBinding
-			?.takeIf { it.startsWith("key:") }
-			?.substringAfter(':')
-			?.toIntOrNull()
-		if(assignedKey == event.keyCode) {
-			if(event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0)
-				finish()
-			return true
-		}
 		return viewModel.input.dispatchKeyEvent(event) || super.dispatchKeyEvent(event)
 	}
 	override fun onGenericMotionEvent(event: MotionEvent) = viewModel.input.onGenericMotionEvent(event) || super.onGenericMotionEvent(event)

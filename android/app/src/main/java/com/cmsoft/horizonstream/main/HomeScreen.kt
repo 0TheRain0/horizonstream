@@ -2,6 +2,7 @@ package com.cmsoft.horizonstream.main
 
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import androidx.compose.animation.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -72,10 +73,14 @@ fun HomeScreen(
     }
 
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
         val host = pendingOnboardingHost
         pendingOnboardingHost = null
+        val granted = ImmersiveOnboardingActivity.cameraPermissions.all { permission ->
+            grants[permission] == true ||
+                ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+        }
         if (granted && host != null) {
             startImmersiveOnboarding(host)
         } else if (!granted) {
@@ -84,7 +89,16 @@ fun HomeScreen(
     }
 
     fun requestCameraThenStartOnboarding(host: DisplayHost) {
-        if (ContextCompat.checkSelfPermission(context, ImmersiveOnboardingActivity.HEADSET_CAMERA_PERMISSION) == PackageManager.PERMISSION_GRANTED) {
+        // Quest 2/Pro can still use the regular setup and stream paths, but
+        // their headsets do not expose raw passthrough frames for QR scanning.
+        // Avoid opening an immersive scanner that can never produce a frame.
+        if (DeviceUtils.isQuest() && !DeviceUtils.supportsQuestPassthroughCamera()) {
+            navController.navigate("onboard/${Uri.encode(host.host)}")
+            return
+        }
+        if (ImmersiveOnboardingActivity.cameraPermissions.all { permission ->
+                ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
+            }) {
             startImmersiveOnboarding(host)
         } else {
             pendingOnboardingHost = host
@@ -319,9 +333,9 @@ fun HomeScreen(
             text = {
                 Text(
                     if (denied) {
-                        "Camera access was not granted, so Horizon Stream can’t scan the sign-in QR code or PS5 Link Device code. Allow it in system permissions to continue setup."
+                        "Headset camera access was not granted, so Horizon Stream can’t scan the sign-in QR code or PS5 Link Device code. Allow it in system settings to continue setup."
                     } else {
-                        "Horizon Stream needs headset-camera access during setup to scan the PlayStation Network QR code and the eight-digit Link Device code. The camera is only used while scanning."
+                        "Horizon Stream needs camera access during setup to scan the PlayStation Network QR code and the eight-digit Link Device code. The camera is only used while scanning."
                     }
                 )
             },
@@ -332,7 +346,7 @@ fun HomeScreen(
                         showCameraPermissionDialog = true
                     } else {
                         showCameraPermissionDialog = false
-                        cameraPermissionLauncher.launch(ImmersiveOnboardingActivity.HEADSET_CAMERA_PERMISSION)
+                        cameraPermissionLauncher.launch(ImmersiveOnboardingActivity.cameraPermissions)
                     }
                 }) {
                     Text(if (denied) "Try again" else "Allow camera")

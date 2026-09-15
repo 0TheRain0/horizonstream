@@ -5,7 +5,7 @@ The Quest setup flow keeps console discovery, PSN sign-in, pairing, and immersiv
 ### First-time setup
 
 1. Open Horizon Stream and wait for the unregistered console to appear. Use **Refresh search** if needed.
-2. Select the discovered console and approve the headset-camera permission request. The camera is used only for scanning the sign-in QR code and the console Link Device code.
+2. Select the discovered console. On Quest 3/3S, approve **Headset Camera** access. It is used only for scanning the sign-in QR code and console Link Device code. Quest 2 and Quest Pro use the manual pairing route below instead.
 3. On a computer with Chrome, install the [Horizon Stream PSN Authenticator](https://chromewebstore.google.com/detail/horizon-stream-psn-authenticator/pcdjngmmgchdmemcacffbmcpedjpgohe).
 4. Open the extension side panel, choose **Open PS Remote Play sign-in**, and finish signing in to PlayStation Network. Keep the panel open until the one-time QR code appears.
 5. Press any button on a Quest controller to start the headset scan. Hold the computer QR code inside the frame. Horizon Stream retrieves the PSN Account ID locally and saves it.
@@ -13,6 +13,16 @@ The Quest setup flow keeps console discovery, PSN sign-in, pairing, and immersiv
 7. Keep the PS5 awake and on the same network while pairing. When pairing succeeds, review the controller mappings and press a button to connect to the immersive stream.
 
 The sign-in QR code contains a one-time redirect URL. Do not share it; if it is stale or already used, create a new Chrome sign-in and scan the new code once.
+
+### Quest 2 and Quest Pro manual pairing
+
+Quest 2 and Quest Pro can use immersive streaming, but their raw passthrough camera frames are not available to apps, so QR and Link Device scanning cannot work on those headsets. This is not fixed by changing camera permissions. After selecting a discovered console, Horizon Stream opens the regular setup screen.
+
+1. In Chrome, use the Horizon Stream PSN Authenticator extension to complete PlayStation Network sign-in, then select **Copy URL** when it shows the final redirect.
+2. In Horizon Stream, choose **QR scanning isn't working**, then **Advanced setup**. Paste the one-time URL into **PS Remote Play redirect URL**; Horizon Stream retrieves and stores the PSN Account ID. Supply the console address only if discovery did not fill it in.
+3. On PS5, open **Settings → System → Remote Play → Link Device**. On PS4, open **Settings → Remote Play Connection Settings → Add Device**. Enter its fresh eight-digit code in Horizon Stream and choose pair/save.
+
+The copied redirect URL is sensitive and single-use. Do not share it. This manual route does not require headset-camera access.
 
 ### Repeat setup
 
@@ -26,9 +36,11 @@ Quest Touch support is available in Immersive VR Mode. A/B map to Cross/Circle, 
 
 Horizon Stream includes immersive features configured in the app's **Settings** screen:
 
-- **Immersive VR Mode:** presents the stream as a head-tracked spatial screen. It is required for Quest Touch controller support and AI depth features.
-- **Quest Controller Support:** maps Quest Touch inputs to a virtual PlayStation controller. Tap Quest Menu for Options, double-tap for the PlayStation button, and long-press to exit the stream. Menu + X sends Share, Menu + Y sends the PlayStation button, and Menu + left-stick click sends a touchpad click.
-- **Exit Stream Button:** under **Controls & Input**, learn a separate Quest or Bluetooth-gamepad button to exit the stream. The Quest Menu long-press is always reserved and cannot be reassigned; the learned assignment can be cleared.
+- **Immersive VR Mode:** presents the stream as a head-tracked spatial screen. It is required for Quest Touch controller support, pointer controls, and AI depth features.
+- **Recenter the immersive screen:** press the Quest **Meta** button to recenter the headset. Horizon Stream places the screen along your full look direction, including vertical pitch, while keeping the screen level and fixed until the next recenter.
+- **Curved immersive screen:** wraps the spatial screen around you when the headset runtime supports OpenXR cylinder layers.
+- **Quest Controller Support:** maps Quest Touch inputs to a virtual PlayStation controller. Tap Quest Menu for Options, double-tap for the PlayStation button, and long-press to send Options and open the in-stream controls. Menu + X sends Share, Menu + Y sends the PlayStation button, and Menu + left-stick click sends a touchpad click.
+- **In-stream controls:** long-press Quest Menu to send one Options press and open the settings panel. On a Bluetooth controller, use its Options/Menu button in the same way. The panel includes screen size, curve, Quest Controller Support, AI depth, close, and exit controls; Bluetooth D-pad/left-stick navigation is supported.
 - **AI 2D-to-3D Depth:** runs Depth Anything V2 asynchronously to create separate eye views in Immersive VR Mode. Start at **Comfort** or **Balanced**; **Enhanced** and **Strong** are more pronounced but may produce artifacts or use more resources.
 
 If a game has unstable input, visual artifacts, or unacceptable battery use, disable AI depth and use a Bluetooth controller with the flat stream.

@@ -36,13 +36,13 @@ The **Quest Menu** button is reserved by Horizon Stream and cannot be learned as
 
 - Tap once: sends PlayStation **Options** after a short delay and briefly displays the exit hint.
 - Double-tap: sends the PlayStation button, unless a Menu chord is being used.
-- Long-press: exits the stream and returns to the connections page.
+- Long-press: sends one PlayStation **Options** press, then opens the in-stream settings panel.
 
-### Assign another exit button
+### In-stream settings and Bluetooth navigation
 
-Open **Settings → Controls & Input → Exit Stream Button**, then choose the item and press the controller button you want to learn. That button exits the current stream instead of being passed to the game. Choose **Clear assignment** in the same dialog to remove it.
+The in-stream panel lets you change screen size, curved view, Quest Controller Support, and depth settings, then close the panel or exit the stream. Aim a Quest controller and squeeze its trigger to choose a row. This pointer remains available when Quest Controller Support is disabled.
 
-The learned exit button may come from a Bluetooth gamepad or from an assignable Quest Touch button. Quest Menu remains reserved for the gestures above.
+A connected Bluetooth controller can navigate this panel with its D-pad or left stick and select a row with its primary button. Its Options/Menu button uses the same single-, double-, and long-press behavior as Quest Menu.
 
 ---
 

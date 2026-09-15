@@ -57,9 +57,15 @@ private const val QR_REDIRECT_TRANSFER_PREFIX = "HORIZONSTREAM:PSN_REDIRECT:"
 private const val HEADSET_CAMERA_PERMISSION = "horizonos.permission.HEADSET_CAMERA"
 private const val META_CAMERA_SOURCE_KEY = "com.meta.extra_metadata.camera_source"
 private const val META_CAMERA_SOURCE_PASSTHROUGH = 0
+private const val META_CAMERA_POSITION_KEY = "com.meta.extra_metadata.position"
+private const val META_CAMERA_POSITION_LEFT = 0
 
 private val passthroughCameraSourceKey = CameraCharacteristics.Key(
     META_CAMERA_SOURCE_KEY,
+    Int::class.javaObjectType
+)
+private val passthroughCameraPositionKey = CameraCharacteristics.Key(
+    META_CAMERA_POSITION_KEY,
     Int::class.javaObjectType
 )
 
@@ -75,20 +81,21 @@ internal fun AccountIdQrScanner(
 ) {
     val context = LocalContext.current
     var hasCameraPermission by remember {
-        mutableStateOf(context.hasPassthroughCameraPermission())
+        mutableStateOf(context.hasPassthroughCameraPermissions())
     }
     var cameraError by remember { mutableStateOf<String?>(null) }
     val permissionLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        hasCameraPermission = granted && context.hasPassthroughCameraPermission()
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        hasCameraPermission = context.hasPassthroughCameraPermissions() &&
+            grants.values.all { it }
         if (!hasCameraPermission) {
-            cameraError = "Passthrough camera access is required to scan the QR code."
+            cameraError = "Headset camera access is required to scan the QR code."
         }
     }
 
     LaunchedEffect(Unit) {
-        if (!hasCameraPermission) permissionLauncher.launch(HEADSET_CAMERA_PERMISSION)
+        if (!hasCameraPermission) permissionLauncher.launch(cameraPermissions)
     }
 
     Surface(
@@ -152,8 +159,8 @@ internal fun AccountIdQrScanner(
                         .background(Color(0xFF111827)),
                     contentAlignment = Alignment.Center
                 ) {
-                    Button(onClick = { permissionLauncher.launch(HEADSET_CAMERA_PERMISSION) }) {
-                        Text("Allow passthrough camera access")
+                    Button(onClick = { permissionLauncher.launch(cameraPermissions) }) {
+                        Text("Allow camera access")
                     }
                 }
             }
@@ -259,7 +266,12 @@ private fun QrCameraPreview(
                     analysis
                 )
             } catch (error: Exception) {
-                latestOnCameraError("Quest could not start its passthrough camera. Update Horizon OS and allow camera access, or paste the Account ID manually.")
+                val message = if (error.message.orEmpty().contains("No Meta passthrough camera", ignoreCase = true)) {
+                    "This headset does not expose a passthrough camera to apps. Quest 2 cannot scan setup codes; use a Quest 3 or Quest 3S, or paste the Account ID manually."
+                } else {
+                    "Quest could not start its passthrough camera. Confirm headset camera access is allowed and Horizon OS is up to date, or paste the Account ID manually."
+                }
+                latestOnCameraError(message)
             }
         }, mainExecutor)
 
@@ -272,23 +284,39 @@ private fun QrCameraPreview(
 }
 
 private fun passthroughCameraSelector(provider: ProcessCameraProvider?): CameraSelector {
-    val selector = CameraSelector.Builder()
+    val leftCameraSelector = CameraSelector.Builder()
         .addCameraFilter { cameraInfos ->
             cameraInfos.filter { cameraInfo ->
                 runCatching {
-                    Camera2CameraInfo.from(cameraInfo)
-                        .getCameraCharacteristic(passthroughCameraSourceKey) == META_CAMERA_SOURCE_PASSTHROUGH
+                    val info = Camera2CameraInfo.from(cameraInfo)
+                    info.getCameraCharacteristic(passthroughCameraSourceKey) ==
+                        META_CAMERA_SOURCE_PASSTHROUGH &&
+                        info.getCameraCharacteristic(passthroughCameraPositionKey) ==
+                        META_CAMERA_POSITION_LEFT
                 }.getOrDefault(false)
             }
         }
         .build()
-
-    if (provider?.hasCamera(selector) == true) return selector
+    if (provider?.hasCamera(leftCameraSelector) == true) return leftCameraSelector
+    val passthroughSelector = CameraSelector.Builder()
+        .addCameraFilter { cameraInfos -> cameraInfos.filter { cameraInfo ->
+            runCatching {
+                Camera2CameraInfo.from(cameraInfo)
+                    .getCameraCharacteristic(passthroughCameraSourceKey) ==
+                    META_CAMERA_SOURCE_PASSTHROUGH
+            }.getOrDefault(false)
+        } }
+        .build()
+    if (provider?.hasCamera(passthroughSelector) == true) return passthroughSelector
     throw IllegalStateException("No Meta passthrough camera is available")
 }
 
-private fun Context.hasPassthroughCameraPermission(): Boolean =
-    ContextCompat.checkSelfPermission(this, HEADSET_CAMERA_PERMISSION) == PackageManager.PERMISSION_GRANTED
+private val cameraPermissions = arrayOf(HEADSET_CAMERA_PERMISSION)
+
+private fun Context.hasPassthroughCameraPermissions(): Boolean =
+    cameraPermissions.all {
+        ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
+    }
 
 internal fun decodeQrTransfer(value: String?): PsnQrTransfer? {
     val payload = value ?: return null

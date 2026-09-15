@@ -15,6 +15,19 @@ object DeviceUtils {
                model.contains("Quest", ignoreCase = true)
     }
 
+    /**
+     * Horizon OS exposes raw passthrough camera frames only on Quest 3/3S
+     * hardware. Keep older Quest models on the regular manual setup path so
+     * they do not get trapped in an immersive QR scanner with no camera.
+     */
+    fun supportsQuestPassthroughCamera(): Boolean {
+        val device = "${Build.DEVICE} ${Build.MODEL}".lowercase()
+        return device.contains("quest 3") ||
+            device.contains("quest3") ||
+            device.contains("eureka") ||
+            device.contains("panther")
+    }
+
     fun applyImmersiveMode(activity: Activity, enabled: Boolean) {
         val window = activity.window
         val windowInsetsController = WindowCompat.getInsetsController(window, window.decorView)

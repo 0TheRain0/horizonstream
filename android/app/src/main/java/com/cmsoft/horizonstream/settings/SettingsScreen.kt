@@ -18,7 +18,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.cmsoft.horizonstream.R
-import com.cmsoft.horizonstream.common.ControllerAssignmentLearner
 import com.cmsoft.horizonstream.common.Preferences
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -33,19 +32,16 @@ fun SettingsScreen(navController: NavController) {
     var codec by remember { mutableStateOf(preferences.codec) }
     var questControllerEmulation by remember { mutableStateOf(preferences.questControllerEmulationEnabled) }
     var immersiveVrMode by remember { mutableStateOf(preferences.immersiveVrModeEnabled) }
+    var curvedViewEnabled by remember { mutableStateOf(preferences.curvedViewEnabled) }
     var simulated3dEnabled by remember { mutableStateOf(preferences.simulated3dEnabled) }
     var simulated3dIntensity by remember { mutableStateOf(preferences.simulated3dIntensity) }
     var swapCrossMoon by remember { mutableStateOf(preferences.swapCrossMoon) }
-    var streamSettingsButtonBinding by remember {
-        mutableStateOf(preferences.streamSettingsButtonBinding)
-    }
 
     // Dialog state for selections
     var showResolutionDialog by remember { mutableStateOf(false) }
     var showFpsDialog by remember { mutableStateOf(false) }
     var showCodecDialog by remember { mutableStateOf(false) }
     var show3dIntensityDialog by remember { mutableStateOf(false) }
-    var showControllerLearnDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -111,6 +107,8 @@ fun SettingsScreen(navController: NavController) {
                         preferences.questControllerEmulationEnabled = false
                         simulated3dEnabled = false
                         preferences.simulated3dEnabled = false
+                        curvedViewEnabled = false
+                        preferences.curvedViewEnabled = false
                     }
                 }
             )
@@ -122,6 +120,20 @@ fun SettingsScreen(navController: NavController) {
                 onCheckedChange = { enabled ->
                     questControllerEmulation = enabled
                     preferences.questControllerEmulationEnabled = enabled
+                    if (enabled && !immersiveVrMode) {
+                        immersiveVrMode = true
+                        preferences.immersiveVrModeEnabled = true
+                    }
+                }
+            )
+
+            SettingSwitchItem(
+                title = stringResource(R.string.preferences_curved_view_title),
+                subtitle = stringResource(R.string.preferences_curved_view_summary),
+                checked = curvedViewEnabled,
+                onCheckedChange = { enabled ->
+                    curvedViewEnabled = enabled
+                    preferences.curvedViewEnabled = enabled
                     if (enabled && !immersiveVrMode) {
                         immersiveVrMode = true
                         preferences.immersiveVrModeEnabled = true
@@ -175,15 +187,6 @@ fun SettingsScreen(navController: NavController) {
                     swapCrossMoon = it
                     preferences.swapCrossMoon = it
                 }
-            )
-
-            SettingClickableItem(
-                title = stringResource(R.string.preferences_stream_settings_button_title),
-                subtitle = stringResource(
-                    R.string.preferences_stream_settings_button_summary,
-                    ControllerAssignmentLearner.label(streamSettingsButtonBinding)
-                ),
-                onClick = { showControllerLearnDialog = true }
             )
 
             Spacer(modifier = Modifier.height(32.dp))
@@ -262,47 +265,6 @@ fun SettingsScreen(navController: NavController) {
         )
     }
 
-    if (showControllerLearnDialog) {
-        DisposableEffect(Unit) {
-            ControllerAssignmentLearner.begin { learnedBinding ->
-                preferences.streamSettingsButtonBinding = learnedBinding
-                streamSettingsButtonBinding = learnedBinding
-                showControllerLearnDialog = false
-            }
-            onDispose {
-                ControllerAssignmentLearner.cancel()
-            }
-        }
-        AlertDialog(
-            onDismissRequest = { showControllerLearnDialog = false },
-            title = {
-                Text(stringResource(R.string.preferences_stream_settings_button_title))
-            },
-            text = {
-                Text(stringResource(R.string.preferences_stream_settings_button_learning))
-            },
-            confirmButton = {
-                TextButton(onClick = { showControllerLearnDialog = false }) {
-                    Text("Cancel")
-                }
-            },
-            dismissButton = {
-                if (ControllerAssignmentLearner.normalizedBinding(
-                        streamSettingsButtonBinding) != null
-                ) {
-                    TextButton(
-                        onClick = {
-                            preferences.streamSettingsButtonBinding = null
-                            streamSettingsButtonBinding = null
-                            showControllerLearnDialog = false
-                        }
-                    ) {
-                        Text(stringResource(R.string.action_clear_assignment))
-                    }
-                }
-            }
-        )
-    }
 }
 
 @Composable
