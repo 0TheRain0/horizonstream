@@ -4,7 +4,7 @@ Horizon Stream is an open-source PlayStation Remote Play client for Meta Quest h
 
 ## Start here
 
-Follow the [Horizon Stream on Quest guide](setup/quest.md) to discover a console, complete the Chrome/PSN sign-in QR transfer, scan the PS5 Link Device code, and configure immersive streaming, Quest Touch controller support, or AI 2D-to-3D depth. Quest 2 and Quest Pro users should use the guide's manual redirect-URL pairing path because their raw passthrough camera frames are unavailable to apps. Horizon Stream saves the retrieved PSN Account ID so repeat onboarding can skip the sign-in QR step.
+Follow the [Horizon Stream on Quest guide](setup/quest.md) to discover a console, complete the Chrome/PSN sign-in QR transfer, scan the PS5 Link Device code, and configure immersive streaming, Quest Touch controller support, or AI 2D-to-3D depth. Horizon Stream supports Quest 3 and Quest 3S and saves the retrieved PSN Account ID so repeat onboarding can skip the sign-in QR step.
 
 !!! Note "Quest features"
 

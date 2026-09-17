@@ -8,7 +8,7 @@ This guide covers Horizon Stream's Quest-specific registration and streaming fea
 
 ## Before you begin
 
-- Use a supported Meta Quest headset and update Horizon OS before testing immersive features. QR scanning uses raw passthrough camera frames exposed to apps on Quest 3 and Quest 3S. Quest 2 and Quest Pro do not expose those frames, so they use manual pairing.
+- Use a Meta Quest 3 or Quest 3S and update Horizon OS before testing immersive features.
 - Put the Quest and PlayStation on the same local network for initial registration and best streaming quality.
 - Turn on the PlayStation and enable Remote Play. The Quest must discover an unregistered console before the immersive setup can start.
 - Have a computer with Google Chrome available. Install the [Horizon Stream PSN Authenticator from the Chrome Web Store](https://chromewebstore.google.com/detail/horizon-stream-psn-authenticator/pcdjngmmgchdmemcacffbmcpedjpgohe). The [extension README](../../chrome-extension/README.md) explains the side-panel workflow and local-development loading option.
@@ -59,20 +59,7 @@ Once the PSN Account ID has been retrieved, Horizon Stream saves it locally. The
 
 After pairing succeeds, Horizon Stream shows the Quest controller mappings and explains how to use a DualSense, DualShock 4, or other Bluetooth controller. Press any Quest controller button to connect to the immersive stream.
 
-The legacy manual registration screen remains available for older consoles and advanced recovery cases. It may ask for a console address and registration values directly.
-
-## Quest 2 and Quest Pro manual pairing
-
-Quest 2 and Quest Pro can use Horizon Stream's regular and immersive streaming views, but they cannot use its QR or Link Device camera scans. Horizon OS does not expose the raw passthrough camera frames needed for those scans to apps. This is expected even if the Camera permission appears enabled.
-
-After you select a discovered console, Horizon Stream opens the regular setup screen rather than immersive scanning. Complete registration as follows:
-
-1. On a computer with Google Chrome, install and open the [Horizon Stream PSN Authenticator](https://chromewebstore.google.com/detail/horizon-stream-psn-authenticator/pcdjngmmgchdmemcacffbmcpedjpgohe), select **Open PS Remote Play sign-in**, and complete PlayStation Network sign-in.
-2. When the extension reaches the final redirect, use **Copy URL**. The result is a one-time, sensitive sign-in redirect; do not share it.
-3. Back in Horizon Stream, select **QR scanning isn't working**, then **Advanced setup**. Paste the copied result into **PS Remote Play redirect URL**. Horizon Stream retrieves and saves the PSN Account ID. Enter the console address only if discovery did not already provide it.
-4. On PS5, open `Settings → System → Remote Play → Link Device`. On PS4, open `Settings → Remote Play Connection Settings → Add Device`. Enter the current eight-digit code in Horizon Stream, then pair and save.
-
-No headset-camera permission is required for this route. If the redirect is expired or already used, repeat Chrome sign-in to generate a new URL.
+The manual registration screen remains available for advanced recovery cases. It may ask for a console address and registration values directly.
 
 
 ## Immersive VR Mode
@@ -136,7 +123,7 @@ AI depth estimation can be less convincing for HUDs, fast cuts, transparency, pa
 ## Troubleshooting
 
 - **No console is discovered:** turn on the PlayStation, enable Remote Play, wake it from standby if necessary, and confirm the Quest and console are on the same local network. Use **Refresh search** on the connections page.
-- **Camera permission is denied:** on Quest 3/3S, return to the connections page, choose the unregistered console again, and allow **Headset Camera** access. If you use Quest 2 or Quest Pro, do not keep retrying camera permission: follow the manual pairing steps above instead.
+- **Camera permission is denied:** return to the connections page, choose the unregistered console again, and allow **Headset Camera** access.
 - **QR scanner does not show the computer screen:** keep the Chrome QR code bright and fully visible, move the computer closer, and keep it inside the blue frame. If the code is stale or already used, complete a new Chrome sign-in and scan the new QR code once.
 - **Sony returns an authorization error:** the compatibility sign-in process may have been rejected server-side. Start again with a fresh Chrome sign-in; Horizon Stream cannot safely bypass a Sony server decision.
 - **The PS5 Link Device code is not detected:** open **Settings → System → Remote Play → Link Device** again, leave the eight-digit code visible, and keep it inside the camera frame. Retry pairing with the fresh code.

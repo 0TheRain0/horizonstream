@@ -5,7 +5,7 @@ The Quest setup flow keeps console discovery, PSN sign-in, pairing, and immersiv
 ### First-time setup
 
 1. Open Horizon Stream and wait for the unregistered console to appear. Use **Refresh search** if needed.
-2. Select the discovered console. On Quest 3/3S, approve **Headset Camera** access. It is used only for scanning the sign-in QR code and console Link Device code. Quest 2 and Quest Pro use the manual pairing route below instead.
+2. Select the discovered console and approve **Headset Camera** access. It is used only for scanning the sign-in QR code and console Link Device code.
 3. On a computer with Chrome, install the [Horizon Stream PSN Authenticator](https://chromewebstore.google.com/detail/horizon-stream-psn-authenticator/pcdjngmmgchdmemcacffbmcpedjpgohe).
 4. Open the extension side panel, choose **Open PS Remote Play sign-in**, and finish signing in to PlayStation Network. Keep the panel open until the one-time QR code appears.
 5. Press any button on a Quest controller to start the headset scan. Hold the computer QR code inside the frame. Horizon Stream retrieves the PSN Account ID locally and saves it.
@@ -13,16 +13,6 @@ The Quest setup flow keeps console discovery, PSN sign-in, pairing, and immersiv
 7. Keep the PS5 awake and on the same network while pairing. When pairing succeeds, review the controller mappings and press a button to connect to the immersive stream.
 
 The sign-in QR code contains a one-time redirect URL. Do not share it; if it is stale or already used, create a new Chrome sign-in and scan the new code once.
-
-### Quest 2 and Quest Pro manual pairing
-
-Quest 2 and Quest Pro can use immersive streaming, but their raw passthrough camera frames are not available to apps, so QR and Link Device scanning cannot work on those headsets. This is not fixed by changing camera permissions. After selecting a discovered console, Horizon Stream opens the regular setup screen.
-
-1. In Chrome, use the Horizon Stream PSN Authenticator extension to complete PlayStation Network sign-in, then select **Copy URL** when it shows the final redirect.
-2. In Horizon Stream, choose **QR scanning isn't working**, then **Advanced setup**. Paste the one-time URL into **PS Remote Play redirect URL**; Horizon Stream retrieves and stores the PSN Account ID. Supply the console address only if discovery did not fill it in.
-3. On PS5, open **Settings → System → Remote Play → Link Device**. On PS4, open **Settings → Remote Play Connection Settings → Add Device**. Enter its fresh eight-digit code in Horizon Stream and choose pair/save.
-
-The copied redirect URL is sensitive and single-use. Do not share it. This manual route does not require headset-camera access.
 
 ### Repeat setup
 

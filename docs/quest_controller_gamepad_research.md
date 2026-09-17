@@ -56,7 +56,7 @@ Physical face buttons were mapped to match standard controller layout ergonomics
 
 ## 3. The Technical Blockers (Why it didn't work)
 
-Sideloaded flat (2D) Android applications running inside Meta Horizon OS (Quest 3 / Quest Pro) encounter OS-level restrictions regarding system controllers:
+Sideloaded flat (2D) Android applications running inside Meta Horizon OS on Quest 3 encounter OS-level restrictions regarding system controllers:
 
 1. **System Pointer Capture**: By default, Horizon OS intercepts Quest Touch controller inputs to draw pointer lines and trigger mouse events (touch-clicks) on the 2D Android panel. 
 2. **Missing Gamepad Forwarding**: Because the OS handles controllers as spatial mouse/pointer devices, it does not package and forward standard `KeyEvent` or `MotionEvent` triggers (such as `AXIS_X` or `KEYCODE_BUTTON_A`) to the active window focus. 

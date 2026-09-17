@@ -1,6 +1,6 @@
 # Horizon Stream
 
-Horizon Stream is an open-source PlayStation Remote Play client specifically designed and optimized for Meta Quest VR headsets. It aims to bring a better, more immersive experience to your goggles. Immersive streaming is designed for the **Meta Quest 2, Quest 3, Quest 3S, and Quest Pro**; camera-assisted QR setup requires a Quest 3 or Quest 3S because those are the Quest headsets that expose passthrough camera frames to apps.
+Horizon Stream is an open-source PlayStation Remote Play client specifically designed and optimized for **Meta Quest 3 and Quest 3S**. It aims to bring a better, more immersive experience to your goggles.
 
 This project is a dedicated VR fork of the [chiaki-ng code](https://github.com/streetpea/chiaki-ng). 
 
@@ -11,7 +11,6 @@ This project is a dedicated VR fork of the [chiaki-ng code](https://github.com/s
 ## Quest features
 
 - **Guided Quest onboarding:** On Quest 3 and Quest 3S, discover an unregistered console, approve headset-camera access, sign in to PlayStation Network in Chrome, scan the one-time sign-in QR code, and scan the console's Link Device code from the headset.
-- **Quest 2/Pro manual pairing:** Quest 2 and Quest Pro can stream normally, but Horizon OS does not expose the raw passthrough camera frames this app needs to scan setup codes. Their setup route uses the Chrome extension's copyable redirect URL and the console's Link Device code instead.
 - **Saved PSN Account ID:** Horizon Stream retrieves the Account ID locally and saves it in the app, so repeat onboarding skips the sign-in QR step and goes straight to the console Link Device step.
 - **Immersive VR Mode:** Presents the stream on a head-tracked spatial screen and keeps connection errors and pairing prompts visible in-headset.
 - **Quest Touch controller support:** Uses Quest controllers as a virtual PlayStation controller during immersive streams, with clear mappings and dedicated Menu-button gestures. Bluetooth controllers can also navigate the in-stream settings panel.
@@ -47,7 +46,7 @@ Horizon Stream's Quest-first setup walks you through discovery, PSN sign-in, con
 ### First-time setup
 
 1. Turn on the PlayStation and wait for it to appear as an unregistered console in Horizon Stream. If it does not appear, use **Refresh search** and check the network.
-2. Select the discovered console. On Quest 3/3S, approve the **Headset Camera** permission before immersive onboarding opens. It is used only to scan setup codes. Quest 2 and Quest Pro users should use the manual pairing instructions below.
+2. Select the discovered console and approve the **Headset Camera** permission before immersive onboarding opens. It is used only to scan setup codes.
 3. On a computer with Google Chrome, install the [Horizon Stream PSN Authenticator](https://chromewebstore.google.com/detail/horizon-stream-psn-authenticator/pcdjngmmgchdmemcacffbmcpedjpgohe).
 4. Open the extension side panel, choose **Open PS Remote Play sign-in**, and complete the normal PlayStation Network sign-in in Chrome. Keep the panel open until it displays the one-time QR code.
 5. In the headset, press a Quest controller button to scan the QR code. Horizon Stream retrieves the PSN Account ID locally and saves it for future setup.
@@ -55,17 +54,6 @@ Horizon Stream's Quest-first setup walks you through discovery, PSN sign-in, con
 7. Keep the PS5 awake and on the same network while Horizon Stream pairs it. After pairing, review the Quest controller mappings and press any button to connect.
 
 The QR code is a one-time redirect and should never be shared. If it expires, create a new Chrome sign-in and scan the new code once.
-
-### Quest 2 and Quest Pro manual pairing
-
-Quest 2 and Quest Pro do not provide apps with the raw passthrough camera frames required for QR and Link Device scanning. This is a headset-platform limitation, not a permission problem. Horizon Stream automatically opens the regular setup screen after you choose a discovered console.
-
-1. On a computer with Chrome, install and open the Horizon Stream PSN Authenticator extension, select **Open PS Remote Play sign-in**, and sign in to PlayStation Network.
-2. When the extension shows the final redirect, choose **Copy URL**. Treat that one-time URL like a password and do not share it.
-3. In Horizon Stream, choose **QR scanning isn't working**, then **Advanced setup**. Paste the copied URL into **PS Remote Play redirect URL**. Horizon Stream retrieves and saves the PSN Account ID locally. Enter the console address only if it was not filled in from discovery.
-4. On PS5, open **Settings → System → Remote Play → Link Device**. On PS4, open **Settings → Remote Play Connection Settings → Add Device**. Enter the fresh eight-digit code in Horizon Stream, then pair and save.
-
-No headset-camera permission is needed for this route. After registration, Quest 2 and Quest Pro support both regular streaming and the immersive screen.
 
 ### Repeat setup
 
