@@ -16,7 +16,9 @@ add_library(chiaki-jni SHARED
         src/main/cpp/audio-output.cpp
         src/main/cpp/circular-fifo.hpp
         src/main/cpp/openxr_manager.h
-        src/main/cpp/openxr_manager.cpp)
+        src/main/cpp/openxr_manager.cpp
+        src/main/cpp/immersive_environment_renderer.h
+        src/main/cpp/immersive_environment_renderer.cpp)
 
 target_link_libraries(chiaki-jni chiaki-lib)
 

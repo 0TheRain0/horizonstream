@@ -13,14 +13,16 @@ This project is a dedicated VR fork of the [chiaki-ng code](https://github.com/s
 - **Guided Quest onboarding:** On Quest 3 and Quest 3S, discover an unregistered console, approve headset-camera access, sign in to PlayStation Network in Chrome, scan the one-time sign-in QR code, and scan the console's Link Device code from the headset.
 - **Saved PSN Account ID:** Horizon Stream retrieves the Account ID locally and saves it in the app, so repeat onboarding skips the sign-in QR step and goes straight to the console Link Device step.
 - **Immersive VR Mode:** Presents the stream on a head-tracked spatial screen and keeps connection errors and pairing prompts visible in-headset.
+- **Immersive environments:** Choose passthrough, a black void, Home Theater, Grand Cinema, or Synthwave around the stream. The three room environments use assets by Sean Gilleece / Woodford XR under CC BY 4.0; attribution is included in `LICENSES/ROOM_ENVIRONMENTS_CC-BY-4.0.txt` and the app assets.
 - **Quest Touch controller support:** Uses Quest controllers as a virtual PlayStation controller during immersive streams, with clear mappings and dedicated Menu-button gestures. Bluetooth controllers can also navigate the in-stream settings panel.
-- **AI 2D-to-3D depth:** Uses Depth Anything V2 to infer depth from the 2D stream and render separate eye views. Choose Comfort, Balanced, Enhanced, or Strong depth strength.
+- **AI 2D-to-3D depth:** Uses Depth Anything V2 to infer depth from the 2D stream and render separate eye views. Choose Comfort, Balanced, Enhanced, or Strong depth strength, and select either the existing Depth Shift or the optional Depth Warp reprojection method.
 
 AI depth can increase battery use or visual complexity. A Bluetooth gamepad and the regular flat stream remain available when reliability is more important than immersion.
 
 ## Documentation
 
 - [Quest setup and registration](docs/setup/quest.md)
+- [AI 2D-to-3D model, runtime, and license notes](docs/setup/ai-2d-to-3d.md)
 - [Quest Touch and controller mappings](docs/setup/controlling.md#horizon-stream-on-meta-quest)
 - [Chrome redirect-QR extension](chrome-extension/README.md)
 

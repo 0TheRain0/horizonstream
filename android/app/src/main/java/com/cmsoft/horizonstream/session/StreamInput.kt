@@ -2,6 +2,7 @@ package com.cmsoft.horizonstream.session
 
 import android.content.Context
 import android.hardware.*
+import android.hardware.input.InputManager
 import android.os.Handler
 import android.os.Looper
 import android.view.*
@@ -24,12 +25,20 @@ class StreamInput(val context: Context, val preferences: Preferences)
 	var controllerStateInterceptor: ((ControllerState, Boolean) -> Boolean)? = null
 	@Volatile
 	var suppressedPhysicalButtons: UInt = 0U
+	private var gameplayInputSuspended = false
+	private var physicalInputNeedsNeutral = false
+	private var openXrOwnsQuestInput = false
+	private val ignoredQuestDevices = mutableSetOf<Int>()
+	private var lastSuppressedButtons: UInt? = null
 
 	val controllerState: ControllerState get() = combinedControllerState(false)
 
 	private fun combinedControllerState(suppressPhysicalButtons: Boolean): ControllerState
 	{
-		val controllerState = sensorControllerState or keyControllerState or motionControllerState
+		val controllerState = if(physicalInputNeedsNeutral)
+			sensorControllerState or ControllerState()
+		else
+			sensorControllerState or keyControllerState or motionControllerState
 		if(suppressPhysicalButtons) {
 			controllerState.buttons = controllerState.buttons and
 				suppressedPhysicalButtons.inv()
@@ -52,9 +61,9 @@ class StreamInput(val context: Context, val preferences: Preferences)
 
 		// prioritize motion controller's l2 and r2 over key
 		// (some controllers send only key, others both but key earlier than full press)
-		if(motionControllerState.l2State > 0U)
+		if(!physicalInputNeedsNeutral && motionControllerState.l2State > 0U)
 			controllerState.l2State = motionControllerState.l2State
-		if(motionControllerState.r2State > 0U)
+		if(!physicalInputNeedsNeutral && motionControllerState.r2State > 0U)
 			controllerState.r2State = motionControllerState.r2State
 
 		return (controllerState or touchControllerState or questControllerState).also {
@@ -65,11 +74,62 @@ class StreamInput(val context: Context, val preferences: Preferences)
 	}
 
 	private val sensorControllerState = ControllerState() // from Motion Sensors
-	private val keyControllerState = ControllerState() // from KeyEvents
-	private val motionControllerState = ControllerState() // from MotionEvents
+	private var keyControllerState = ControllerState() // from KeyEvents
+	private var motionControllerState = ControllerState() // from MotionEvents
 	private var questControllerState = ControllerState() // from OpenXR Touch controllers
+	private var keyControllerDeviceId = -1
+	private var motionControllerDeviceId = -1
 	@Volatile private var pulsedQuestButtons = 0U
 	private val questButtonPulseHandler = Handler(Looper.getMainLooper())
+	private val inputManager = context.getSystemService(Context.INPUT_SERVICE) as InputManager
+
+	@Synchronized
+	fun useOpenXrQuestInput(enabled: Boolean) {
+		openXrOwnsQuestInput = enabled
+		if(enabled) {
+			if(isDuplicateQuestDevice(keyControllerDeviceId)) {
+				keyControllerState = ControllerState()
+				keyControllerDeviceId = -1
+			}
+			if(isDuplicateQuestDevice(motionControllerDeviceId)) {
+				motionControllerState = ControllerState()
+				motionControllerDeviceId = -1
+			}
+			controllerStateUpdated(isQuestInput = true)
+		}
+	}
+
+	private fun isDuplicateQuestDevice(deviceId: Int): Boolean {
+		if(!openXrOwnsQuestInput || deviceId < 0)
+			return false
+		val device = inputManager.getInputDevice(deviceId) ?: return false
+		// Oculus Touch is also exposed as an Android joystick on Horizon OS.
+		// Its cached Android events must not be ORed with authoritative XR input.
+		if(device.vendorId != 0x2833)
+			return false
+		if(ignoredQuestDevices.add(deviceId))
+			android.util.Log.i("StreamInput", "OpenXR owns Touch input; ignoring duplicate Android device $deviceId (${device.name})")
+		return true
+	}
+	private val inputDeviceListener = object: InputManager.InputDeviceListener {
+		override fun onInputDeviceAdded(deviceId: Int) = Unit
+
+		override fun onInputDeviceChanged(deviceId: Int) = releaseDeviceInput(deviceId)
+
+		override fun onInputDeviceRemoved(deviceId: Int) = releaseDeviceInput(deviceId)
+	}
+	private val inputDeviceLifecycleObserver = object: LifecycleObserver {
+		@OnLifecycleEvent(Lifecycle.Event.ON_RESUME)
+		fun onResume() {
+			inputManager.registerInputDeviceListener(inputDeviceListener, questButtonPulseHandler)
+		}
+
+		@OnLifecycleEvent(Lifecycle.Event.ON_PAUSE)
+		fun onPause() {
+			inputManager.unregisterInputDeviceListener(inputDeviceListener)
+			releaseAllControllerInputs()
+		}
+	}
 	var touchControllerState = ControllerState()
 		set(value)
 		{
@@ -135,20 +195,99 @@ class StreamInput(val context: Context, val preferences: Preferences)
 
 	fun observe(lifecycleOwner: LifecycleOwner)
 	{
+		lifecycleOwner.lifecycle.addObserver(inputDeviceLifecycleObserver)
 		if(preferences.motionEnabled)
 			lifecycleOwner.lifecycle.addObserver(motionLifecycleObserver)
 	}
 
-	private fun controllerStateUpdated(isQuestInput: Boolean = false)
-	{
-		val rawState = controllerState
-		if(controllerStateInterceptor?.invoke(rawState, isQuestInput) == true)
-			return
-		controllerStateChangedCallback?.let { it(combinedControllerState(true)) }
+	@Synchronized
+	private fun releaseDeviceInput(deviceId: Int) {
+		var changed = false
+		if(keyControllerDeviceId == deviceId) {
+			keyControllerState = ControllerState()
+			keyControllerDeviceId = -1
+			changed = true
+		}
+		if(motionControllerDeviceId == deviceId) {
+			motionControllerState = ControllerState()
+			motionControllerDeviceId = -1
+			changed = true
+		}
+		if(changed)
+			controllerStateUpdated()
 	}
 
+	@Synchronized
+	fun releaseAllControllerInputs() {
+		keyControllerState = ControllerState()
+		motionControllerState = ControllerState()
+		questControllerState = ControllerState()
+		keyControllerDeviceId = -1
+		motionControllerDeviceId = -1
+		pulsedQuestButtons = 0U
+		questButtonPulseHandler.removeCallbacksAndMessages(null)
+		// A release must reach Chiaki even when an immersive menu is consuming
+		// controller events or the OpenXR session has stopped producing samples.
+		lastSuppressedButtons = 0U
+		controllerStateChangedCallback?.invoke(ControllerState())
+	}
+
+	@Synchronized
+	fun isPhysicalControllerNeutral(): Boolean {
+		val state = keyControllerState or motionControllerState
+		return state.buttons == 0U && state.l2State < 25U && state.r2State < 25U &&
+			kotlin.math.abs(state.leftX.toInt()) < 6500 &&
+			kotlin.math.abs(state.leftY.toInt()) < 6500 &&
+			kotlin.math.abs(state.rightX.toInt()) < 6500 &&
+			kotlin.math.abs(state.rightY.toInt()) < 6500
+	}
+
+	@Synchronized
+	fun setGameplayInputSuspended(suspended: Boolean) {
+		if(gameplayInputSuspended == suspended)
+			return
+		gameplayInputSuspended = suspended
+		if(!suspended) {
+			// Keep physical state until its real release arrives. Clearing it
+			// makes a held button's next repeat look like a fresh press.
+			physicalInputNeedsNeutral = !isPhysicalControllerNeutral()
+			questControllerState = ControllerState()
+		}
+		// Preserve the short synthetic Options press that opens the menu, but
+		// release every held gameplay button, trigger, and stick immediately.
+		lastSuppressedButtons = if(suspended) pulsedQuestButtons else null
+		controllerStateChangedCallback?.invoke(ControllerState(buttons = pulsedQuestButtons))
+	}
+
+	@Synchronized
+	private fun controllerStateUpdated(isQuestInput: Boolean = false)
+	{
+		// The immersive menu should see only Android gamepad input here. Mixing
+		// Quest buttons into this state can make Bluetooth navigation appear held.
+		val physicalState = keyControllerState or motionControllerState
+		if(!gameplayInputSuspended && physicalInputNeedsNeutral && !isQuestInput &&
+			isPhysicalControllerNeutral())
+			physicalInputNeedsNeutral = false
+		val intercepted = controllerStateInterceptor?.invoke(physicalState, isQuestInput) == true
+		if(gameplayInputSuspended || intercepted) {
+			// A Bluetooth stick can report at a high rate while navigating the
+			// menu. Send only transitions, not a neutral packet per sample.
+			if(lastSuppressedButtons != pulsedQuestButtons) {
+				lastSuppressedButtons = pulsedQuestButtons
+				controllerStateChangedCallback?.invoke(
+					ControllerState(buttons = pulsedQuestButtons))
+			}
+		} else {
+			lastSuppressedButtons = null
+			controllerStateChangedCallback?.invoke(combinedControllerState(true))
+		}
+	}
+
+	@Synchronized
 	fun dispatchKeyEvent(event: KeyEvent): Boolean
 	{
+		if(isDuplicateQuestDevice(event.deviceId))
+			return true
 		//Log.i("StreamSession", "key event $event")
 		if(event.action != KeyEvent.ACTION_DOWN && event.action != KeyEvent.ACTION_UP)
 			return false
@@ -156,11 +295,17 @@ class StreamInput(val context: Context, val preferences: Preferences)
 		when(event.keyCode)
 		{
 			KeyEvent.KEYCODE_BUTTON_L2 -> {
+				if(event.action == KeyEvent.ACTION_DOWN && event.repeatCount > 0)
+					return true
+				trackKeyDevice(event.deviceId)
 				keyControllerState.l2State = if(event.action == KeyEvent.ACTION_DOWN) UByte.MAX_VALUE else 0U
 				controllerStateUpdated()
 				return true
 			}
 			KeyEvent.KEYCODE_BUTTON_R2 -> {
+				if(event.action == KeyEvent.ACTION_DOWN && event.repeatCount > 0)
+					return true
+				trackKeyDevice(event.deviceId)
 				keyControllerState.r2State = if(event.action == KeyEvent.ACTION_DOWN) UByte.MAX_VALUE else 0U
 				controllerStateUpdated()
 				return true
@@ -189,6 +334,11 @@ class StreamInput(val context: Context, val preferences: Preferences)
 			else -> return false
 		}
 
+		// Only mapped gamepad keys are consumed. A held control remains down
+		// until ACTION_UP; repeat-down is not a new press after a menu transition.
+		if(event.action == KeyEvent.ACTION_DOWN && event.repeatCount > 0)
+			return true
+		trackKeyDevice(event.deviceId)
 		keyControllerState.buttons = keyControllerState.buttons.run {
 			when(event.action)
 			{
@@ -202,8 +352,18 @@ class StreamInput(val context: Context, val preferences: Preferences)
 		return true
 	}
 
+	private fun trackKeyDevice(deviceId: Int) {
+		if(deviceId >= 0 && keyControllerDeviceId != deviceId) {
+			keyControllerState = ControllerState()
+			keyControllerDeviceId = deviceId
+		}
+	}
+
+	@Synchronized
 	fun onGenericMotionEvent(event: MotionEvent): Boolean
 	{
+		if(isDuplicateQuestDevice(event.deviceId))
+			return true
 		// Android gamepads do not all report the complete SOURCE_JOYSTICK
 		// value.  In particular, Bluetooth HID controllers on Horizon OS can
 		// expose only the joystick source class (with no source-id bits).  The
@@ -213,6 +373,15 @@ class StreamInput(val context: Context, val preferences: Preferences)
 			InputDevice.SOURCE_CLASS_JOYSTICK
 		if(!joystickSource && !event.isFromSource(InputDevice.SOURCE_GAMEPAD))
 			return false
+		if(event.deviceId >= 0 && motionControllerDeviceId != event.deviceId) {
+			motionControllerState = ControllerState()
+			motionControllerDeviceId = event.deviceId
+		}
+		if(event.actionMasked == MotionEvent.ACTION_CANCEL) {
+			motionControllerState = ControllerState()
+			controllerStateUpdated()
+			return true
+		}
 
 		fun axis(axis: Int, fallbackAxis: Int? = null): Float {
 			val primaryRange = event.device?.getMotionRange(axis, event.source)

@@ -1,10 +1,13 @@
 #include "openxr_manager.h"
+#include "immersive_environment_renderer.h"
 #include <jni.h>
+#include <android/asset_manager_jni.h>
 #include <dlfcn.h>
 #include <string.h>
 #include <unistd.h>
 #include <pthread.h>
 #include <atomic>
+#include <algorithm>
 #include <cmath>
 #include <mutex>
 #include <vector>
@@ -66,6 +69,10 @@ static XrSwapchain g_xrSwapchain = XR_NULL_HANDLE;
 static XrSwapchain g_rightEyeSwapchain = XR_NULL_HANDLE;
 static XrSwapchain g_onboardingAuraSwapchain = XR_NULL_HANDLE;
 static XrSpace g_appSpace = XR_NULL_HANDLE;
+static AAssetManager* g_assetManager = NULL;
+static int64_t g_xrColorFormat = GL_RGBA8;
+static bool g_passthroughExtensionEnabled = false;
+static ImmersiveEnvironmentRenderer g_environmentRenderer;
 // VIEW is used only to sample the headset pose when the user recenters.  The
 // stream itself remains in LOCAL space so it stays put while the user looks
 // around after the recenter operation.
@@ -77,6 +84,7 @@ static bool g_xrSessionBegun = false;
 static bool g_renderThreadStarted = false;
 static uint32_t g_controllerSampleCount = 0;
 static uint32_t g_controllerSyncFailureCount = 0;
+static bool g_controllerInputActive = false;
 static bool g_loggedFirstCompositedFrame = false;
 static bool g_loggedFirstRenderAttempt = false;
 static bool g_loggedRenderPrerequisiteFailure = false;
@@ -87,9 +95,12 @@ static int32_t g_streamHeight = 720;
 // active, so keep them atomic rather than requiring a VR-session restart.
 static std::atomic<bool> g_stereoConversionEnabled(false);
 static std::atomic<float> g_stereoDepthIntensity(0.015f);
+// 0 uses a direct depth shift; 1 refines the inverse warp continuously.
+static std::atomic<int> g_stereoConversionMethod(0);
 static JavaVM* g_javaVm = NULL;
 static jobject g_activityObject = NULL;
 static jmethodID g_controllerStateMethod = NULL;
+static jmethodID g_controllerUnavailableMethod = NULL;
 static jmethodID g_controllerPointerMethod = NULL;
 static jobject g_surfaceTextureObject = NULL;
 static jmethodID g_updateTexImageMethod = NULL;
@@ -117,6 +128,7 @@ static bool g_metaTouchPlusEnabled = false;
 static bool g_compositionCylinderEnabled = false;
 static std::atomic<bool> g_curvedViewEnabled(false);
 static std::atomic<float> g_immersiveViewScale(1.0f);
+static std::atomic<int> g_immersiveEnvironment(0);
 static std::atomic<bool> g_recenterRequested(false);
 static XrPosef g_streamLayerPose = {};
 static bool g_streamLayerPoseValid = false;
@@ -138,6 +150,7 @@ static GLint g_eyeSignLocation = -1;
 static GLint g_depthIntensityLocation = -1;
 static GLint g_depthTextureLocation = -1;
 static GLint g_depthMapReadyLocation = -1;
+static GLint g_conversionMethodLocation = -1;
 static GLuint g_depthTexture = 0;
 static GLuint g_depthCaptureProgram = 0;
 static GLuint g_depthCaptureTexture = 0;
@@ -379,6 +392,7 @@ static bool initControllerActions() {
     }
     g_controllerSampleCount = 0;
     g_controllerSyncFailureCount = 0;
+    g_controllerInputActive = false;
     LOGI("Quest Touch controller actions initialized.");
     return true;
 }
@@ -628,10 +642,26 @@ static void updateControllerPointer(
     }
 }
 
-static void updateControllerState(JNIEnv* env, XrTime displayTime) {
-    if (g_gameplayActionSet == XR_NULL_HANDLE || !g_pfnSyncActions ||
-        !g_controllerStateMethod || !g_activityObject)
+static void notifyControllerUnavailable(JNIEnv* env) {
+    if (!g_controllerInputActive)
         return;
+    g_controllerInputActive = false;
+    if (!g_controllerUnavailableMethod || !g_activityObject)
+        return;
+    env->CallVoidMethod(g_activityObject, g_controllerUnavailableMethod);
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        LOGE("Quest controller unavailable callback raised a Java exception.");
+    }
+}
+
+static void updateControllerState(JNIEnv* env, XrTime displayTime) {
+    if (g_sessionState != XR_SESSION_STATE_FOCUSED ||
+        g_gameplayActionSet == XR_NULL_HANDLE || !g_pfnSyncActions ||
+        !g_controllerStateMethod || !g_activityObject) {
+        notifyControllerUnavailable(env);
+        return;
+    }
 
     XrActiveActionSet activeSet = { g_gameplayActionSet, XR_NULL_PATH };
     XrActionsSyncInfo syncInfo = { XR_TYPE_ACTIONS_SYNC_INFO };
@@ -639,12 +669,14 @@ static void updateControllerState(JNIEnv* env, XrTime displayTime) {
     syncInfo.activeActionSets = &activeSet;
     XrResult syncResult = g_pfnSyncActions(g_xrSession, &syncInfo);
     if (XR_FAILED(syncResult)) {
+        notifyControllerUnavailable(env);
         if ((++g_controllerSyncFailureCount % 120) == 1) {
             LOGW("Quest controller action sync unavailable: %d (session state %d).",
                  syncResult, g_sessionState);
         }
         return;
     }
+    g_controllerInputActive = true;
 
     XrVector2f leftStick = getVectorAction(g_thumbstickAction, g_leftHandPath);
     XrVector2f rightStick = getVectorAction(g_thumbstickAction, g_rightHandPath);
@@ -818,14 +850,33 @@ static bool initStereoProgram() {
         "varying vec2 vScreenCoord;\n"
         "uniform samplerExternalOES uVideoTexture;\n"
         "uniform sampler2D uDepthTexture;\n"
+        "uniform mat4 uTextureTransform;\n"
         "uniform float uEyeSign;\n"
         "uniform float uDepthIntensity;\n"
         "uniform float uDepthMapReady;\n"
+        "uniform float uConversionMethod;\n"
         "void main() {\n"
-        "  float depth = uDepthMapReady > 0.5\n"
-        "      ? texture2D(uDepthTexture, vScreenCoord).r : 0.5;\n"
-        "  float disparity = (depth - 0.5) * uDepthIntensity * uEyeSign;\n"
-        "  vec2 uv = clamp(vTextureCoord + vec2(disparity, 0.0), vec2(0.001), vec2(0.999));\n"
+        "  vec2 uv = vTextureCoord;\n"
+        "  if (uDepthMapReady > 0.5) {\n"
+        // Stereo disparity must follow geometry, not individual video pixels.
+        // A per-pixel motion mask creates folds in the sampling coordinates
+        // on textured surfaces and breaks left/right eye correspondence.
+        "    float strength = uDepthIntensity * uEyeSign;\n"
+        "    float depth = texture2D(uDepthTexture, vScreenCoord).r;\n"
+        "    vec2 sourceCoord = vScreenCoord;\n"
+        "    sourceCoord.x = clamp(vScreenCoord.x + (depth - 0.5) * strength, 0.001, 0.999);\n"
+        "    if (uConversionMethod > 0.5) {\n"
+        // Refine a continuous inverse mapping instead of selecting one of
+        // five discrete offsets (which creates visible staircase seams).
+        "      for (int iteration = 0; iteration < 4; ++iteration) {\n"
+        "        float sourceDepth = texture2D(uDepthTexture, sourceCoord).r;\n"
+        "        float target = clamp(vScreenCoord.x + (sourceDepth - 0.5) * strength, 0.001, 0.999);\n"
+        "        sourceCoord.x = mix(sourceCoord.x, target, 0.75);\n"
+        "      }\n"
+        "    }\n"
+        "    uv = (uTextureTransform * vec4(sourceCoord, 0.0, 1.0)).xy;\n"
+        "  }\n"
+        "  uv = clamp(uv, vec2(0.001), vec2(0.999));\n"
         "  vec3 color = texture2D(uVideoTexture, uv).rgb;\n"
         "  color = pow(max(color, vec3(0.0)), vec3(1.04));\n"
         "  color = (color - vec3(0.5)) * 1.06 + vec3(0.5);\n"
@@ -861,6 +912,7 @@ static bool initStereoProgram() {
     g_depthIntensityLocation = glGetUniformLocation(g_stereoProgram, "uDepthIntensity");
     g_depthTextureLocation = glGetUniformLocation(g_stereoProgram, "uDepthTexture");
     g_depthMapReadyLocation = glGetUniformLocation(g_stereoProgram, "uDepthMapReady");
+    g_conversionMethodLocation = glGetUniformLocation(g_stereoProgram, "uConversionMethod");
     glUseProgram(g_stereoProgram);
     glUniform1i(glGetUniformLocation(g_stereoProgram, "uVideoTexture"), 0);
     glUniform1i(g_depthTextureLocation, 1);
@@ -1443,6 +1495,7 @@ static bool createStereoSwapchain() {
             break;
         }
     }
+    g_xrColorFormat = selectedFormat;
 
     auto createEyeSwapchain = [&](XrSwapchain* swapchain,
                                   std::vector<XrSwapchainImageOpenGLESKHR>* images,
@@ -1548,6 +1601,12 @@ static bool createOnboardingAuraSwapchain() {
 }
 
 static bool renderStereoFrame(JNIEnv* env) {
+    // Video and its UI are opaque 2D passes, independent of room geometry.
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_BLEND);
+    glBindVertexArray(0);
     if (!g_loggedFirstRenderAttempt) {
         g_loggedFirstRenderAttempt = true;
         LOGI("First OpenXR video render attempt.");
@@ -1665,6 +1724,8 @@ static bool renderStereoFrame(JNIEnv* env) {
         glUniform1i(g_depthTextureLocation, 1);
         glUniform1f(
             g_depthMapReadyLocation, g_depthMapReady ? 1.0f : 0.0f);
+        glUniform1f(g_conversionMethodLocation,
+            static_cast<float>(g_stereoConversionMethod.load(std::memory_order_relaxed)));
         glActiveTexture(GL_TEXTURE0);
         glBindBuffer(GL_ARRAY_BUFFER, g_stereoVertexBuffer);
         glVertexAttribPointer(
@@ -1776,6 +1837,9 @@ static void* openxrRenderLoopThread(void* arg) {
                             XrEventDataSessionStateChanged* sessionStateChanged = (XrEventDataSessionStateChanged*)&eventData;
                             g_sessionState = sessionStateChanged->state;
                             LOGI("OpenXR Session State Changed: %d", g_sessionState);
+                            if (attachedToJvm &&
+                                g_sessionState != XR_SESSION_STATE_FOCUSED)
+                                notifyControllerUnavailable(env);
 
                             if (g_sessionState == XR_SESSION_STATE_READY && !g_xrSessionBegun) {
                                 XrSessionBeginInfo sessionBeginInfo = { XR_TYPE_SESSION_BEGIN_INFO, NULL, XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO };
@@ -1849,6 +1913,8 @@ static void* openxrRenderLoopThread(void* arg) {
 
                 bool videoFrameReady = frameState.shouldRender != XR_TRUE ||
                     (g_onboardingMode ? renderOnboardingFrame() : (attachedToJvm && renderStereoFrame(env)));
+                if (!g_onboardingMode && frameState.shouldRender == XR_TRUE)
+                    g_environmentRenderer.render(frameState.predictedDisplayTime);
                 bool auraFrameReady = !g_onboardingMode || frameState.shouldRender != XR_TRUE ||
                     renderOnboardingAuraFrame();
                 XrCompositionLayerQuad quadLayers[3];
@@ -1877,16 +1943,56 @@ static void* openxrRenderLoopThread(void* arg) {
                         { 0.0f, 0.0f, 0.0f, 1.0f },
                         { 0.0f, 0.0f, -2.5f }
                     };
+                XrCompositionLayerBaseHeader* layers[4] = { NULL, NULL, NULL, NULL };
+                uint32_t contentLayerCount = 0;
                 const float viewScale = g_immersiveViewScale.load(std::memory_order_relaxed);
+                const XrCompositionLayerBaseHeader* passthroughLayer =
+                    !g_onboardingMode ? g_environmentRenderer.passthroughLayer() : NULL;
+                if (passthroughLayer)
+                    layers[contentLayerCount++] =
+                        const_cast<XrCompositionLayerBaseHeader*>(passthroughLayer);
+                const bool roomEnvironmentActive = !g_onboardingMode &&
+                    g_environmentRenderer.layer() != NULL;
+                float roomScreenWidth = 3.0f * viewScale;
+                if (roomEnvironmentActive) {
+                    const int environment = g_immersiveEnvironment.load(
+                        std::memory_order_relaxed);
+                    float y = 0.05f;
+                    float z = -4.152f;
+                    float anchorWidth = 3.60f;
+                    float screenFraction = 0.80f;
+                    if (environment == 2) {
+                        y = 2.20f; z = -21.42f;
+                        anchorWidth = 22.0f; screenFraction = 1.0f;
+                    } else if (environment == 3) {
+                        y = 2.95f; z = -13.90f;
+                        anchorWidth = 14.0f; screenFraction = 1.0f;
+                    } else if (environment == 1) {
+                        y = 0.05f; z = -4.152f;
+                        anchorWidth = 3.60f; screenFraction = 0.80f;
+                    }
+                    roomScreenWidth = anchorWidth *
+                        std::fmin(1.0f, screenFraction * viewScale);
+                    leftLayer.pose = XrPosef{
+                        { 0.0f, 0.0f, 0.0f, 1.0f },
+                        { 0.0f, y, z }
+                    };
+                }
                 const bool stereoConversionEnabled =
                     g_stereoConversionEnabled.load(std::memory_order_acquire);
-                leftLayer.size.width = 3.0f * viewScale;
-                leftLayer.size.height = 1.6875f * viewScale;
+                leftLayer.size.width = roomScreenWidth;
+                leftLayer.size.height = roomScreenWidth * 9.0f / 16.0f;
                 leftLayer.eyeVisibility = stereoConversionEnabled
                         ? XR_EYE_VISIBILITY_LEFT : XR_EYE_VISIBILITY_BOTH;
 
-                XrCompositionLayerBaseHeader* layers[4] = { NULL, NULL, NULL, NULL };
-                uint32_t contentLayerCount = 0;
+                if (!g_onboardingMode) {
+                    const XrCompositionLayerBaseHeader* environmentLayer =
+                        g_environmentRenderer.layer();
+                    if (environmentLayer) {
+                        layers[contentLayerCount++] =
+                            const_cast<XrCompositionLayerBaseHeader*>(environmentLayer);
+                    }
+                }
                 if (g_onboardingMode &&
                     g_onboardingAuraSwapchain != XR_NULL_HANDLE) {
                     XrCompositionLayerQuad& auraLayer = quadLayers[1];
@@ -1921,7 +2027,10 @@ static void* openxrRenderLoopThread(void* arg) {
                     leftCylinder.space = g_appSpace;
                     leftCylinder.subImage = leftLayer.subImage;
                     leftCylinder.pose = leftLayer.pose;
-                    leftCylinder.radius = 2.5f * viewScale;
+                    leftCylinder.centralAngle = 1.28f;
+                    leftCylinder.radius = roomEnvironmentActive
+                        ? roomScreenWidth / leftCylinder.centralAngle
+                        : 2.5f * viewScale;
                     // A cylinder pose identifies the cylinder's center, not
                     // its closest surface. Move that center toward the user
                     // by its radius so the middle of the curved screen stays
@@ -1932,7 +2041,6 @@ static void* openxrRenderLoopThread(void* arg) {
                     leftCylinder.pose.position = addVector(
                         leftLayer.pose.position,
                         scaleVector(centerOffset, leftCylinder.radius));
-                    leftCylinder.centralAngle = 1.28f;
                     leftCylinder.aspectRatio = 16.0f / 9.0f;
                     leftCylinder.eyeVisibility = stereoConversionEnabled
                         ? XR_EYE_VISIBILITY_LEFT : XR_EYE_VISIBILITY_BOTH;
@@ -1965,6 +2073,8 @@ static void* openxrRenderLoopThread(void* arg) {
                 endInfo.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
                 bool submitContent = frameState.shouldRender == XR_TRUE &&
                                      videoFrameReady && auraFrameReady;
+                if (!submitContent && !g_onboardingMode)
+                    g_environmentRenderer.pausePassthrough();
                 endInfo.layerCount = submitContent ? contentLayerCount : 0;
                 endInfo.layers = submitContent
                         ? (const XrCompositionLayerBaseHeader* const*)&layers
@@ -1980,8 +2090,10 @@ static void* openxrRenderLoopThread(void* arg) {
         usleep(11000);
     }
     eglMakeCurrent(g_eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
-    if (attachedToJvm)
+    if (attachedToJvm) {
+        notifyControllerUnavailable(env);
         g_javaVm->DetachCurrentThread();
+    }
     LOGI("OpenXR 3D VR Render Thread exiting.");
     return NULL;
 }
@@ -1999,6 +2111,28 @@ JNIEXPORT jobject JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_
     }
     g_streamWidth = stream_width;
     g_streamHeight = stream_height;
+
+    jclass activityClassForAssets = env->GetObjectClass(activity);
+    jmethodID getAssets = activityClassForAssets
+        ? env->GetMethodID(activityClassForAssets, "getAssets",
+                           "()Landroid/content/res/AssetManager;")
+        : NULL;
+    jobject javaAssetManager = getAssets
+        ? env->CallObjectMethod(activity, getAssets)
+        : NULL;
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        javaAssetManager = NULL;
+    }
+    g_assetManager = javaAssetManager
+        ? AAssetManager_fromJava(env, javaAssetManager)
+        : NULL;
+    if (javaAssetManager)
+        env->DeleteLocalRef(javaAssetManager);
+    if (activityClassForAssets)
+        env->DeleteLocalRef(activityClassForAssets);
+    if (!g_assetManager)
+        LOGW("Android assets are unavailable; immersive room environments will remain black.");
     g_stereoConversionEnabled.store(
         stereo_conversion_enabled == JNI_TRUE, std::memory_order_release);
     g_stereoDepthIntensity.store(stereo_depth_intensity,
@@ -2029,6 +2163,15 @@ JNIEXPORT jobject JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_
         activityClass,
         "onNativeControllerState",
         "(FFFFFFFFI)V");
+    g_controllerUnavailableMethod = env->GetMethodID(
+        activityClass,
+        "onNativeControllerUnavailable",
+        "()V");
+    // The onboarding activity has no stream controller state to release.
+    if (env->ExceptionCheck()) {
+        env->ExceptionClear();
+        g_controllerUnavailableMethod = NULL;
+    }
     g_controllerPointerMethod = env->GetMethodID(
         activityClass,
         "onNativeControllerPointer",
@@ -2114,6 +2257,14 @@ JNIEXPORT jobject JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_
         enabledExtensions[enabledExtensionCount++] =
             "XR_KHR_composition_layer_cylinder";
         LOGI("Composition cylinder extension is available; curved immersive view enabled.");
+    }
+    g_passthroughExtensionEnabled = isInstanceExtensionAvailable(
+        XR_FB_PASSTHROUGH_EXTENSION_NAME);
+    if (g_passthroughExtensionEnabled) {
+        enabledExtensions[enabledExtensionCount++] = XR_FB_PASSTHROUGH_EXTENSION_NAME;
+        LOGI("Meta passthrough extension is available; mixed-reality environment enabled.");
+    } else {
+        LOGW("Meta passthrough extension is unavailable; passthrough will fall back to the void.");
     }
 
     XrInstanceCreateInfo createInfo;
@@ -2234,6 +2385,13 @@ JNIEXPORT jobject JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_
         LOGE("Failed to create the OpenXR video rendering pipeline.");
         return NULL;
     }
+    if (!g_onboardingMode &&
+        !g_environmentRenderer.initialize(
+            g_assetManager, g_xrInstance, g_xrSession, g_appSpace,
+            g_pfnGetInstanceProcAddr, g_xrColorFormat,
+            g_passthroughExtensionEnabled)) {
+        LOGW("Room environment renderer could not initialize; streaming will continue with a black void.");
+    }
     jobject surfaceObj = createVideoSurfaceTexture(env);
     if (!surfaceObj) {
         LOGE("Failed to create the MediaCodec SurfaceTexture.");
@@ -2328,6 +2486,18 @@ JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nat
          curved == JNI_TRUE ? "true" : "false", scale);
 }
 
+JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nativeSetImmersiveEnvironment(
+        JNIEnv* env,
+        jobject thiz,
+        jint environment) {
+    (void)env;
+    (void)thiz;
+    const int safeEnvironment = std::max(0, std::min(4, static_cast<int>(environment)));
+    g_immersiveEnvironment.store(safeEnvironment, std::memory_order_release);
+    g_environmentRenderer.setEnvironment(safeEnvironment);
+    LOGI("Immersive environment selection changed to %d.", safeEnvironment);
+}
+
 JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nativeSetImmersivePointerEnabled(
         JNIEnv* env,
         jobject thiz,
@@ -2358,6 +2528,18 @@ JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nat
         g_depthWorkerReady.store(false, std::memory_order_release);
     LOGI("Live 2D-to-3D conversion updated: enabled=%s intensity=%.3f.",
          enabledValue ? "true" : "false", depth_intensity);
+}
+
+JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nativeSetStereoConversionMethod(
+        JNIEnv* env,
+        jobject thiz,
+        jint method) {
+    (void)env;
+    (void)thiz;
+    const int safeMethod = method == 1 ? 1 : 0;
+    g_stereoConversionMethod.store(safeMethod, std::memory_order_release);
+    LOGI("2D-to-3D depth warp method updated: %s.",
+         safeMethod == 1 ? "continuous inverse warp" : "direct parallax");
 }
 
 JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nativeSetDepthPipelineReady(
@@ -2425,6 +2607,7 @@ JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nat
     }
     if (g_eglDisplay != EGL_NO_DISPLAY && g_eglContext != EGL_NO_CONTEXT) {
         eglMakeCurrent(g_eglDisplay, g_eglSurface, g_eglSurface, g_eglContext);
+        g_environmentRenderer.shutdown();
         if (g_stereoVertexBuffer) glDeleteBuffers(1, &g_stereoVertexBuffer);
         if (g_stereoFramebuffer) glDeleteFramebuffers(1, &g_stereoFramebuffer);
         if (g_stereoProgram) glDeleteProgram(g_stereoProgram);
@@ -2511,6 +2694,7 @@ JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nat
         g_activityObject = NULL;
     }
     g_controllerStateMethod = NULL;
+    g_controllerUnavailableMethod = NULL;
     g_controllerPointerMethod = NULL;
     if (g_depthBridgeClass) {
         env->DeleteGlobalRef(g_depthBridgeClass);
@@ -2555,11 +2739,16 @@ JNIEXPORT void JNICALL Java_com_cmsoft_horizonstream_stream_VRStreamActivity_nat
     g_loggedFirstRenderAttempt = false;
     g_loggedRenderPrerequisiteFailure = false;
     g_loggedSurfaceTextureFailure = false;
+    g_assetManager = NULL;
+    g_xrColorFormat = GL_RGBA8;
+    g_passthroughExtensionEnabled = false;
     g_controllerSampleCount = 0;
     g_controllerSyncFailureCount = 0;
+    g_controllerInputActive = false;
     g_xrInitialized = false;
     g_compositionCylinderEnabled = false;
     g_curvedViewEnabled.store(false, std::memory_order_relaxed);
+    g_immersiveEnvironment.store(0, std::memory_order_relaxed);
     g_immersiveViewScale.store(1.0f, std::memory_order_relaxed);
     g_immersivePointerEnabled.store(false, std::memory_order_relaxed);
     g_immersivePointerActive.store(false, std::memory_order_relaxed);

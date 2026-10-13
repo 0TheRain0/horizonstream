@@ -2,7 +2,7 @@
 
 !!! Info "Using Horizon Stream on Meta Quest?"
 
-    Start with the [Horizon Stream on Quest guide](quest.md). It documents console discovery, camera permission, Chrome/PSN sign-in, the one-time QR transfer, saved Account IDs, PS5 Link Device scanning, immersive streaming, Quest Touch controller support, button mappings, and AI 2D-to-3D conversion.
+    Start with the [Horizon Stream on Quest guide](quest.md). It documents console discovery, camera permission, Chrome/PSN sign-in, the one-time QR transfer, saved Account IDs, PS5 Link Device scanning, immersive streaming, Quest Touch controller support, button mappings, and AI 2D-to-3D conversion. The [AI 2D-to-3D notes](ai-2d-to-3d.md) describe its model, runtime, rendering path, and licenses.
 
     The remaining pages in this section are retained from chiaki-ng and primarily describe desktop and Steam Deck workflows.
 

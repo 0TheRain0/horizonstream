@@ -27,7 +27,7 @@ object DepthAnythingV2Bridge {
     private const val MODEL_FILE = "depth_anything_v2_small_q4.onnx"
     private const val INPUT_WIDTH = 322
     private const val INPUT_HEIGHT = 182
-    private const val TEMPORAL_ALPHA = 0.38f
+    private const val TEMPORAL_ALPHA = 0.85f
 
     private data class Listener(
         val generation: Long,
@@ -59,6 +59,14 @@ object DepthAnythingV2Bridge {
         onReady: () -> Unit,
         onDepthMap: (ByteArray, Int, Int) -> Unit
     ) {
+        // Strength/method changes do not start a new inference generation.
+        // Replacing the listener here drops an in-flight result, leaving the
+        // native capture pipeline permanently waiting for its completion.
+        if(listener != null && (session != null || initializing.get())) {
+            if(session != null)
+                onReady()
+            return
+        }
         val activeGeneration = generation.incrementAndGet()
         val activeListener = Listener(activeGeneration, onReady, onDepthMap)
         listener = activeListener
@@ -123,8 +131,9 @@ object DepthAnythingV2Bridge {
                     ?.invoke(depthMap, width, height)
             } catch(t: Throwable) {
                 Log.e(TAG, "Depth inference failed", t)
-                val fallback = previousDepth?.takeIf { it.size == width * height }
-                    ?: ByteArray(width * height) { 128.toByte() }
+                // Failed estimates should produce a flat frame, not reuse
+                // old scene geometry (previousDepth is also in model order).
+                val fallback = ByteArray(width * height) { 128.toByte() }
                 listener
                     ?.takeIf { it.generation == activeListener.generation }
                     ?.onDepthMap
@@ -162,7 +171,7 @@ object DepthAnythingV2Bridge {
         val pixelCount = width * height
         val input = FloatArray(pixelCount * 3)
         // glReadPixels starts at the bottom row. Flip into conventional image
-        // order for the model; GL's upload convention aligns the returned map.
+        // order for the model. Flip its output back before uploading to GL.
         for(y in 0 until height) {
             val sourceRow = height - 1 - y
             for(x in 0 until width) {
@@ -199,7 +208,11 @@ object DepthAnythingV2Bridge {
                 "Inference #$inferenceCount completed in ${"%.1f".format(elapsedMs)} ms"
             )
         }
-        return depthBytes
+        val glDepth = ByteArray(pixelCount)
+        for(y in 0 until height)
+            System.arraycopy(depthBytes, (height - 1 - y) * width,
+                glDepth, y * width, width)
+        return glDepth
     }
 
     private fun normalizeAndSmooth(rawDepth: FloatArray): ByteArray {

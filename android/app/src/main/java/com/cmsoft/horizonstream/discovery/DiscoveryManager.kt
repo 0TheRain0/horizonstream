@@ -104,14 +104,24 @@ class DiscoveryManager
 		disposable.dispose()
 	}
 
-	fun sendWakeup(host: String, registKey: ByteArray, ps5: Boolean)
+	fun sendWakeup(host: String, registKey: ByteArray, ps5: Boolean): Boolean
 	{
 		val registKeyString = registKey.indexOfFirst { it == 0.toByte() }.let { end -> registKey.copyOfRange(0, if(end >= 0) end else registKey.size) }.toString(StandardCharsets.UTF_8)
+		if(registKeyString.isEmpty() || registKeyString.length > 8) {
+			Log.e("DiscoveryManager", "Invalid registration key length for wake-up")
+			return false
+		}
 		val credential = try { registKeyString.toULong(16) } catch(e: NumberFormatException) {
 			Log.e("DiscoveryManager", "Failed to convert registKey to int", e)
-			return
+			return false
 		}
-		DiscoveryService.wakeup(discoveryService, host, credential, ps5)
+		val result = DiscoveryService.wakeup(discoveryService, host, credential, ps5)
+		if(result != 0) {
+			Log.e("DiscoveryManager", "Native wake-up packet send failed with code $result")
+			return false
+		}
+		Log.i("DiscoveryManager", "Wake-up packet sent")
+		return true
 	}
 
 	private fun updateService()

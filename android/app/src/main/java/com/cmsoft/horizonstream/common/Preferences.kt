@@ -149,6 +149,11 @@ class Preferences(context: Context)
 		get() = sharedPreferences.getFloat(immersiveViewScaleKey, 1.2f).coerceIn(0.75f, 1.5f)
 		set(value) { sharedPreferences.edit().putFloat(immersiveViewScaleKey, value.coerceIn(0.75f, 1.5f)).apply() }
 
+	private val immersiveEnvironmentKey = "horizonstream.immersive_environment"
+	var immersiveEnvironment
+		get() = sharedPreferences.getInt(immersiveEnvironmentKey, 0).coerceIn(0, 4)
+		set(value) { sharedPreferences.edit().putInt(immersiveEnvironmentKey, value.coerceIn(0, 4)).apply() }
+
 	val simulated3dEnabledKey get() = resources.getString(R.string.preferences_simulated_3d_enabled_key)
 	var simulated3dEnabled
 		get() = sharedPreferences.getBoolean(simulated3dEnabledKey, false)
@@ -158,6 +163,17 @@ class Preferences(context: Context)
 	var simulated3dIntensity
 		get() = sharedPreferences.getString(simulated3dIntensityKey, "medium") ?: "medium"
 		set(value) { sharedPreferences.edit().putString(simulated3dIntensityKey, value).apply() }
+
+	private val simulated3dMethodKey = "horizonstream.simulated_3d_method"
+	var simulated3dMethod
+		get() = sharedPreferences.getString(simulated3dMethodKey, "shift")
+			?.takeIf { it == "gather" } ?: "shift"
+		set(value) {
+			sharedPreferences.edit().putString(
+				simulated3dMethodKey,
+				if (value == "gather") "gather" else "shift"
+			).apply()
+		}
 
 	/**
 	 * The PSN account ID returned by the Chrome-extension sign-in flow. It is

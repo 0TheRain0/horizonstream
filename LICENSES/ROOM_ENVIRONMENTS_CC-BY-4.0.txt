@@ -1,0 +1,14 @@
+Home Theater, Grand Cinema, and Synthwave environment assets
+
+Copyright (c) 2026 Sean Gilleece / Woodford XR.
+
+These environment models and textures are licensed under the Creative Commons
+Attribution 4.0 International license (CC BY 4.0):
+https://creativecommons.org/licenses/by/4.0/
+
+The assets were obtained from Moonlight XR:
+https://github.com/Gilleece/moonlight-android-xr
+
+The included .room and *_lo_0.atlas files are redistributed unchanged. The
+Horizon Stream renderer that loads them is a separate implementation and is
+not part of Moonlight XR. No endorsement by the creators is implied.

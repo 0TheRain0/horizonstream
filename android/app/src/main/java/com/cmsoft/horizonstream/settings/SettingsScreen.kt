@@ -33,8 +33,10 @@ fun SettingsScreen(navController: NavController) {
     var questControllerEmulation by remember { mutableStateOf(preferences.questControllerEmulationEnabled) }
     var immersiveVrMode by remember { mutableStateOf(preferences.immersiveVrModeEnabled) }
     var curvedViewEnabled by remember { mutableStateOf(preferences.curvedViewEnabled) }
+    var immersiveEnvironment by remember { mutableStateOf(preferences.immersiveEnvironment) }
     var simulated3dEnabled by remember { mutableStateOf(preferences.simulated3dEnabled) }
     var simulated3dIntensity by remember { mutableStateOf(preferences.simulated3dIntensity) }
+    var simulated3dMethod by remember { mutableStateOf(preferences.simulated3dMethod) }
     var swapCrossMoon by remember { mutableStateOf(preferences.swapCrossMoon) }
 
     // Dialog state for selections
@@ -42,6 +44,8 @@ fun SettingsScreen(navController: NavController) {
     var showFpsDialog by remember { mutableStateOf(false) }
     var showCodecDialog by remember { mutableStateOf(false) }
     var show3dIntensityDialog by remember { mutableStateOf(false) }
+    var show3dMethodDialog by remember { mutableStateOf(false) }
+    var showEnvironmentDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -141,6 +145,21 @@ fun SettingsScreen(navController: NavController) {
                 }
             )
 
+            if (immersiveVrMode) {
+                val environmentLabel = when (immersiveEnvironment) {
+                    1 -> stringResource(R.string.immersive_environment_home_theater)
+                    2 -> stringResource(R.string.immersive_environment_grand_cinema)
+                    3 -> stringResource(R.string.immersive_environment_synthwave)
+                    4 -> stringResource(R.string.immersive_environment_passthrough)
+                    else -> stringResource(R.string.immersive_environment_black)
+                }
+                SettingClickableItem(
+                    title = stringResource(R.string.preferences_immersive_environment_title),
+                    subtitle = environmentLabel,
+                    onClick = { showEnvironmentDialog = true }
+                )
+            }
+
             Divider(modifier = Modifier.padding(vertical = 12.dp), color = Color(0xFF334155))
 
             // SPATIAL 3D RENDERING SECTION
@@ -161,6 +180,23 @@ fun SettingsScreen(navController: NavController) {
             )
 
             if (simulated3dEnabled) {
+                val methodLabel = stringResource(
+                    if (simulated3dMethod == "gather")
+                        R.string.preferences_simulated_3d_method_gather
+                    else
+                        R.string.preferences_simulated_3d_method_shift
+                )
+                SettingClickableItem(
+                    title = stringResource(R.string.preferences_simulated_3d_method_title),
+                    subtitle = "$methodLabel · " + stringResource(
+                        if (simulated3dMethod == "gather")
+                            R.string.preferences_simulated_3d_method_gather_summary
+                        else
+                            R.string.preferences_simulated_3d_method_shift_summary
+                    ),
+                    onClick = { show3dMethodDialog = true }
+                )
+
                 val intensityLabel = when (simulated3dIntensity) {
                     "low" -> stringResource(R.string.preferences_simulated_3d_intensity_low)
                     "high" -> stringResource(R.string.preferences_simulated_3d_intensity_high)
@@ -238,6 +274,50 @@ fun SettingsScreen(navController: NavController) {
                 showCodecDialog = false
             },
             onDismiss = { showCodecDialog = false }
+        )
+    }
+
+    if (showEnvironmentDialog) {
+        OptionSelectionDialog(
+            title = stringResource(R.string.preferences_immersive_environment_title),
+            options = listOf(0, 1, 2, 3, 4),
+            selectedOption = immersiveEnvironment,
+            optionLabel = {
+                when (it) {
+                    1 -> stringResource(R.string.immersive_environment_home_theater)
+                    2 -> stringResource(R.string.immersive_environment_grand_cinema)
+                    3 -> stringResource(R.string.immersive_environment_synthwave)
+                    4 -> stringResource(R.string.immersive_environment_passthrough)
+                    else -> stringResource(R.string.immersive_environment_black)
+                }
+            },
+            onOptionSelected = {
+                immersiveEnvironment = it
+                preferences.immersiveEnvironment = it
+                showEnvironmentDialog = false
+            },
+            onDismiss = { showEnvironmentDialog = false }
+        )
+    }
+
+    if (show3dMethodDialog) {
+        val methods = listOf("shift", "gather")
+        OptionSelectionDialog(
+            title = stringResource(R.string.preferences_simulated_3d_method_title),
+            options = methods,
+            selectedOption = simulated3dMethod,
+            optionLabel = {
+                stringResource(
+                    if (it == "gather") R.string.preferences_simulated_3d_method_gather
+                    else R.string.preferences_simulated_3d_method_shift
+                )
+            },
+            onOptionSelected = {
+                simulated3dMethod = it
+                preferences.simulated3dMethod = it
+                show3dMethodDialog = false
+            },
+            onDismiss = { show3dMethodDialog = false }
         )
     }
 

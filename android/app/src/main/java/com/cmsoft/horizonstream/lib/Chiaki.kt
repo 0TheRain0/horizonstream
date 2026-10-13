@@ -95,7 +95,7 @@ private class ChiakiNative
 		@JvmStatic external fun sessionSetLoginPin(ptr: Long, pin: String)
 		@JvmStatic external fun discoveryServiceCreate(result: CreateResult, options: DiscoveryServiceOptions, javaService: DiscoveryService)
 		@JvmStatic external fun discoveryServiceFree(ptr: Long)
-		@JvmStatic external fun discoveryServiceWakeup(ptr: Long, host: String, userCredential: Long, ps5: Boolean)
+		@JvmStatic external fun discoveryServiceWakeup(ptr: Long, host: String, userCredential: Long, ps5: Boolean): Int
 		@JvmStatic external fun registStart(result: CreateResult, registInfo: RegistInfo, javaLog: ChiakiLog, javaRegist: Regist)
 		@JvmStatic external fun registStop(ptr: Long)
 		@JvmStatic external fun registFree(ptr: Long)
@@ -327,7 +327,8 @@ class Session(connectInfo: ConnectInfo, logFile: String?, logVerbose: Boolean)
 		fun sessionEvent(event: Event)
 	}
 
-	private var nativePtr: Long
+	private val nativeHandle: NativeSessionHandle
+	@Volatile
 	var eventCallback: ((event: Event) -> Unit)? = null
 
 	init
@@ -337,19 +338,29 @@ class Session(connectInfo: ConnectInfo, logFile: String?, logVerbose: Boolean)
 		val errorCode = ErrorCode(result.errorCode)
 		if(!errorCode.isSuccess)
 			throw CreateError(errorCode)
-		nativePtr = result.ptr
+		nativeHandle = NativeSessionHandle(result.ptr)
 	}
 
-	fun start() = ErrorCode(ChiakiNative.sessionStart(nativePtr))
-	fun stop() = ErrorCode(ChiakiNative.sessionStop(nativePtr))
+	fun start(): ErrorCode = nativeHandle.withPointer {
+		ErrorCode(ChiakiNative.sessionStart(it))
+	} ?: throw IllegalStateException("Cannot start a disposed session")
+
+	fun stop(): ErrorCode = nativeHandle.withPointer {
+		ErrorCode(ChiakiNative.sessionStop(it))
+	} ?: ErrorCode(0)
 
 	fun dispose()
 	{
-		if(nativePtr == 0L)
+		// Mark unavailable before joining/freeing. A renderer callback may
+		// already hold this Session object even after StreamSession detaches it.
+		val ownedPtr = nativeHandle.detach()
+		if(ownedPtr == 0L)
 			return
-		ChiakiNative.sessionJoin(nativePtr)
-		ChiakiNative.sessionFree(nativePtr)
-		nativePtr = 0L
+		eventCallback = null
+		// Do not hold the JNI access lock across join: the native worker may
+		// deliver a final Java callback before it can terminate.
+		ChiakiNative.sessionJoin(ownedPtr)
+		ChiakiNative.sessionFree(ownedPtr)
 	}
 
 	private fun event(event: Event)
@@ -379,17 +390,17 @@ class Session(connectInfo: ConnectInfo, logFile: String?, logVerbose: Boolean)
 
 	fun setSurface(surface: Surface?)
 	{
-		ChiakiNative.sessionSetSurface(nativePtr, surface)
+		nativeHandle.withPointer { ChiakiNative.sessionSetSurface(it, surface) }
 	}
 
 	fun setControllerState(controllerState: ControllerState)
 	{
-		ChiakiNative.sessionSetControllerState(nativePtr, controllerState)
+		nativeHandle.withPointer { ChiakiNative.sessionSetControllerState(it, controllerState) }
 	}
 
 	fun setLoginPin(pin: String)
 	{
-		ChiakiNative.sessionSetLoginPin(nativePtr, pin)
+		nativeHandle.withPointer { ChiakiNative.sessionSetLoginPin(it, pin) }
 	}
 }
 

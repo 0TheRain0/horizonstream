@@ -20,6 +20,7 @@ data class StreamStateLoginPinRequest(val pinIncorrect: Boolean): StreamState()
 
 class StreamSession(val connectInfo: ConnectInfo, val logManager: LogManager, val logVerbose: Boolean, val input: StreamInput)
 {
+	@Volatile
 	var session: Session? = null
 		private set
 
@@ -38,11 +39,16 @@ class StreamSession(val connectInfo: ConnectInfo, val logManager: LogManager, va
 		}
 	}
 
+	@Synchronized
 	fun shutdown()
 	{
-		session?.stop()
-		session?.dispose()
+		val activeSession = session
+		// Unpublish before destruction so new controller/focus callbacks
+		// cannot discover a session that is being freed.
 		session = null
+		activeSession?.eventCallback = null
+		activeSession?.stop()
+		activeSession?.dispose()
 		_state.value = StreamStateIdle
 		//surfaceTexture?.release()
 	}
@@ -52,6 +58,7 @@ class StreamSession(val connectInfo: ConnectInfo, val logManager: LogManager, va
 		shutdown()
 	}
 
+	@Synchronized
 	fun resume()
 	{
 		if(session != null)
@@ -60,7 +67,11 @@ class StreamSession(val connectInfo: ConnectInfo, val logManager: LogManager, va
 		{
 			val session = Session(connectInfo, logManager.createNewFile().file.absolutePath, logVerbose)
 			_state.value = StreamStateConnecting
-			session.eventCallback = this::eventCallback
+			this.session = session
+			session.eventCallback = { event ->
+				if(this.session === session)
+					eventCallback(event)
+			}
 			val surface = surface
 			if(surface != null)
 				session.setSurface(surface)
@@ -69,7 +80,6 @@ class StreamSession(val connectInfo: ConnectInfo, val logManager: LogManager, va
 			// Surface belongs to OpenXR, so starting first creates a race where the
 			// decoder rejects the initial frames and can remain permanently black.
 			session.start()
-			this.session = session
 		}
 		catch(e: CreateError)
 		{

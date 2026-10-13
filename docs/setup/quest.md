@@ -70,6 +70,10 @@ Press the Quest **Meta** button whenever you want to reorient the screen. Horizo
 
 Disable it to return to the regular flat streaming view. Changes to the immersive screen's size, curve, and depth mode apply from the in-stream settings panel.
 
+### Immersive environments
+
+Choose an environment under **Settings → Quest & VR Hardware → Immersive environment**. The available choices are **Passthrough** (your room appears behind the screen), **Black void**, **Home Theater**, **Grand Cinema**, and **Synthwave**. Passthrough is composited by the Quest runtime; Horizon Stream does not receive or save images of your room. The three virtual rooms use assets by Sean Gilleece / Woodford XR under CC BY 4.0; see the included environment attribution notice in the repository and app assets.
+
 ## Quest Touch controller support
 
 Enable **Quest Controller Support** under **Settings → Quest & VR Hardware**. It automatically enables Immersive VR Mode if needed. During an immersive stream, Horizon Stream maps Quest Touch inputs to a virtual PlayStation controller.
@@ -101,13 +105,17 @@ Quest Menu is reserved by Horizon Stream and cannot be used as a learnable butto
 
 ### In-stream controls and pointer mode
 
-Long-press Quest Menu while streaming to open the spatial **Stream Settings** panel. The panel can cycle the screen size, toggle the curved immersive screen, change AI depth options, close the panel, or exit streaming. Aim either Quest controller at a row and squeeze its trigger to choose it. This pointer remains available even when **Quest Controller Support** is disabled, so controllers can still operate the immersive controls without emulating a PlayStation controller.
+Long-press Quest Menu while streaming to open the spatial **Stream Settings** panel. The panel can cycle the screen size and environment, toggle the curved immersive screen, change AI depth options, close the panel, or exit streaming. Aim either Quest controller at a row and squeeze its trigger to choose it. This pointer remains available even when **Quest Controller Support** is disabled, so controllers can still operate the immersive controls without emulating a PlayStation controller.
 
 The curved-screen and size choices take effect immediately and are saved for future immersive connections. A paired Bluetooth controller can use its D-pad or left stick to move through the panel and its primary button to select a row. Its Options/Menu button follows the same single-, double-, and long-press behavior as Quest Menu.
 
 ## AI 2D-to-3D Depth
 
 Enable **Settings → Spatial 3D Rendering → AI 2D-to-3D Depth** to run Depth Anything V2 asynchronously on the incoming 2D game frames. Horizon Stream uses the estimated depth to create separate eye views; it does not receive native stereoscopic video from the PlayStation.
+
+See [AI 2D-to-3D implementation notes](ai-2d-to-3d.md) for the model and runtime libraries, the on-device processing path, and license details.
+
+Choose **Depth Shift** for direct parallax, or **Depth Warp** for a continuous depth-based warp. Both use the same Depth Anything V2 depth map. Depth Warp may use more GPU time. Start with Comfort or Balanced strength; fast scene motion can expose artifacts because depth updates more slowly than video.
 
 The available **AI Depth Strength** presets are:
 

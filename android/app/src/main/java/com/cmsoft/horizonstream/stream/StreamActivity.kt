@@ -202,14 +202,42 @@ open class StreamActivity : AppCompatActivity(), View.OnSystemUiVisibilityChange
 
 	protected fun wakeConsoleAndFinish()
 	{
-		intent.getParcelableExtra<ConnectInfo>(EXTRA_CONNECT_INFO)?.let { info ->
-			com.cmsoft.horizonstream.discovery.DiscoveryManager().sendWakeup(
-				info.host, info.registKey, info.ps5
-			)
+		val info = intent.getParcelableExtra<ConnectInfo>(EXTRA_CONNECT_INFO)
+		if(info == null) {
+			showWakeupFailure("Horizon Stream could not find the saved console details. Return to the console list and try again.")
+			return
 		}
-		finish()
+
+		Thread({
+			val sent = runCatching {
+				com.cmsoft.horizonstream.discovery.DiscoveryManager().sendWakeup(
+					info.host, info.registKey, info.ps5)
+			}.onFailure {
+				android.util.Log.e("StreamActivity", "Failed to send console wake-up request", it)
+			}.getOrDefault(false)
+
+			runOnUiThread {
+				if(sent) {
+					finish()
+				} else {
+					showWakeupFailure("Horizon Stream couldn't send the wake-up request. Check that the PS5 is in Rest Mode, Remote Play is enabled, and the headset is on the same network.")
+				}
+			}
+		}, "ConsoleWakeup").start()
 	}
 
+	private fun showWakeupFailure(message: String)
+	{
+		if(showImmersiveWakeupFailure(message))
+			return
+		MaterialAlertDialogBuilder(this)
+			.setTitle(R.string.action_wakeup)
+			.setMessage(message)
+			.setPositiveButton(android.R.string.ok, null)
+			.show()
+	}
+
+	protected open fun showImmersiveWakeupFailure(message: String): Boolean = false
 	protected open fun showImmersiveQuitError(message: String): Boolean = false
 	protected open fun showImmersiveCreateError(message: String): Boolean = false
 	protected open fun showImmersiveLoginPin(pinIncorrect: Boolean): Boolean = false

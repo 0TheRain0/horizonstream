@@ -211,6 +211,19 @@ fun HomeScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(if (discoveryActive) "Refresh search" else "Start discovery")
                         }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = {
+                                context.startActivity(
+                                    Intent(
+                                        Intent.ACTION_VIEW,
+                                        Uri.parse("https://youtu.be/70w9avqWMr8?si=2nGFBalwrJBJCbBn")
+                                    )
+                                )
+                            }
+                        ) {
+                            Text("View walkthrough")
+                        }
                     }
                 } else {
                     LazyColumn(

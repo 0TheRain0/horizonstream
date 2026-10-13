@@ -77,6 +77,9 @@
     <h3>Curved immersive screen</h3>
     <p>The curved immersive screen wraps the spatial display slightly around you when the headset runtime supports OpenXR cylinder layers. Screen size and curvature can also be changed from the in-stream controls.</p>
 
+    <h3>Immersive environments</h3>
+    <p>Choose <strong>Passthrough</strong> to see your room behind the stream, <strong>Black void</strong>, <strong>Home Theater</strong>, <strong>Grand Cinema</strong>, or <strong>Synthwave</strong>. Passthrough is composited by Quest; Horizon Stream does not receive or save images of your room. The three virtual rooms use assets by Sean Gilleece / Woodford XR under CC BY 4.0; attribution is included with the app's open-source assets.</p>
+
     <h3>Quest Touch Controller Support</h3>
     <p><strong>Quest Controller Support</strong> maps Quest Touch controllers to a virtual PlayStation controller during immersive streams. A/B map to Cross/Circle, X/Y to Square/Triangle, the triggers map to L2/R2, and the sticks map to the PlayStation sticks. Hold the left grip while using the left stick for the D-pad.</p>
     <ul>
@@ -85,10 +88,11 @@
         <li>Long-press Quest <strong>Menu</strong>: send PlayStation Options, then open the in-stream controls.</li>
         <li><strong>Menu + X</strong>: Share; <strong>Menu + Y</strong>: PlayStation button; <strong>Menu + left-stick click</strong>: touchpad click.</li>
     </ul>
-    <p>In the in-stream controls, aim a Quest controller at a row and squeeze its trigger to choose it. You can resize the spatial screen, toggle the curved view, change AI depth, close the panel, or exit streaming. Pointer controls remain available when Quest Controller Support is turned off. A paired Bluetooth controller can also use its D-pad or left stick to move through the panel and its primary button to select a row; its Options/Menu button follows the same single-, double-, and long-press behavior as Quest Menu.</p>
+    <p>In the in-stream controls, aim a Quest controller at a row and squeeze its trigger to choose it. You can resize the spatial screen, toggle the curved view, cycle the environment, change AI depth, close the panel, or exit streaming. Pointer controls remain available when Quest Controller Support is turned off. A paired Bluetooth controller can also use its D-pad or left stick to move through the panel and its primary button to select a row; its Options/Menu button follows the same single-, double-, and long-press behavior as Quest Menu.</p>
 
     <h3>AI 2D-to-3D Depth</h3>
     <p><strong>AI 2D-to-3D Depth</strong> uses Depth Anything V2 asynchronously to infer depth from the 2D game stream and render separate eye views. It requires Immersive VR Mode. Choose <strong>Comfort</strong>, <strong>Balanced</strong>, <strong>Enhanced</strong>, or <strong>Strong</strong> depth strength. Start with Comfort or Balanced; stronger settings can make the depth more obvious but may introduce artifacts or use more battery.</p>
+    <p>Choose <strong>Depth Shift</strong> for direct parallax or <strong>Depth Warp</strong> for a continuous depth-based warp. Both use the same Depth Anything V2 depth map. Depth Warp may use more GPU time. Start with Comfort or Balanced depth strength; fast scene motion can expose artifacts because the depth estimate updates more slowly than the video.</p>
     <p><strong>Note:</strong> AI depth may use additional battery and can introduce visual artifacts. If a game has input or visual problems, disable AI depth and use a Bluetooth controller with the flat stream.</p>
 
     <h2>Support &amp; Community</h2>
